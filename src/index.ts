@@ -19,10 +19,14 @@ import { appendAudit, DEFAULT_AUDIT_PATH } from './audit.js'
 import { critiqueReply, isOwnCall, rewriteReply } from './critic.js'
 import { collect, replaceText } from './guard.js'
 import { improve } from './improve.js'
+import { readRecentReviews } from './records.js'
 import { DEFAULT_RUBRIC_PATH, loadRubric } from './rubric.js'
 
 export const name = '@dsh-external/dsh-style-guard'
 export const inject = ['llm', 'agents']
+
+/** 侧边栏面板读取记录的地址前缀。 */
+export const API_PATH = '/dsh-style-guard/api'
 
 export interface Config {
   /** 总开关。 */
@@ -235,4 +239,39 @@ export function apply(ctx: Context, schemaConfig: Config): void {
       return next()
     }
   })
+  registerRecordsApi(ctx, config)
+}
+
+/**
+ * 给侧边栏面板用的只读接口。
+ *
+ * 走延迟注入，webServer 不在就不注册，主流程照常跑。挂载失败也不能往外抛：
+ * 这个插件在每次模型调用的必经之路上，任何一处抛错都会让整轮对话起不来。
+ */
+function registerRecordsApi(ctx: Context, config: Config): void {
+  try {
+    ctx.inject(['webServer'], (childCtx: Context) => {
+      const server = (childCtx as unknown as { webServer?: { register: (route: unknown) => () => void } }).webServer
+      if (!server || typeof server.register !== 'function') return
+      childCtx.effect(() => server.register({
+        kind: 'prefix',
+        path: API_PATH,
+        handler: (req: { url?: string }, res: { writeHead: (code: number, headers: Record<string, string>) => void, end: (body: string) => void }) => {
+          const limit = limitOf(req?.url)
+          const body = JSON.stringify({ records: readRecentReviews(config.auditPath, limit) })
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+          res.end(body)
+        },
+      }), 'dsh-style-guard: records api')
+    })
+  } catch (error) {
+    appendAudit(config.auditPath, { kind: 'error', where: 'api-register', error: String(error) })
+  }
+}
+
+/** 从请求地址里取条数，最多两百条，取不到就用五十条。 */
+function limitOf(url: string | undefined): number {
+  const match = /[?&]limit=(\d+)/.exec(url ?? '')
+  const parsed = match ? Number.parseInt(match[1] ?? '', 10) : Number.NaN
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 200) : 50
 }

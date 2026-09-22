@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-style-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "回复送出前的语言风格检查与改写：拦在模型输出流中间，先检查、再改写，然后把结果交给页面和会话记录。",
   "private": true,
   "type": "module",
@@ -21,8 +21,12 @@
     "dsh": ">=0.0.1"
   },
   "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
     }
   },
   "peerDependencies": {
@@ -31,13 +35,26 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "tsdown": "^0.22.14"
   },
   "scripts": {
     "build": "bash scripts/build.sh",
     "prepack": "bash scripts/build.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node scripts/test-guard.mjs",
-    "test:runtime": "node scripts/test-runtime.mjs"
+    "test:runtime": "node scripts/test-runtime.mjs",
+    "build:client": "bash scripts/build-client.sh",
+    "build:all": "bash scripts/build.sh && bash scripts/build-client.sh"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
   }
 }

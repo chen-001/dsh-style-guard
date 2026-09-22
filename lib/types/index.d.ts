@@ -13,6 +13,8 @@ import type { Context } from 'cordis';
 import z from 'schemastery';
 export declare const name = "@dsh-external/dsh-style-guard";
 export declare const inject: string[];
+/** 侧边栏面板读取记录的地址前缀。 */
+export declare const API_PATH = "/dsh-style-guard/api";
 export interface Config {
     /** 总开关。 */
     enabled: boolean;

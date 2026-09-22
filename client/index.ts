@@ -25,6 +25,7 @@ interface Entry {
   notes: string[]
   problems: string[]
   missing: string[]
+  softMissing: string[]
   original: string
   rewritten: string
   rejectedText: string
@@ -145,6 +146,32 @@ function detail(entry: Entry) {
   const rejectedOnly = entry.rewritten.length === 0 && entry.rejectedText.length > 0
   const shown = entry.rewritten.length > 0 ? entry.rewritten : entry.rejectedText
 
+  // 改写没产出时，把原因说清楚，别让人以为是没检查
+  if (!shown && entry.problems.length > 0) {
+    rows.push(h('div', {
+      key: 'why',
+      style: { marginBottom: '8px', padding: '8px 10px', borderRadius: '6px', background: '#f5f6f8', fontSize: '13px', lineHeight: '1.7' },
+    }, '检查列出了上面的问题，但没有可用的改写版本，页面上用的还是原文。原因见下面的处理结果。'))
+  }
+
+  // 没被采用的改写丢了什么，一律列出来，旧记录没有存档也照样列
+  if (entry.missing.length > 0) {
+    rows.push(h('div', {
+      key: 'm',
+      style: { marginBottom: '8px', color: '#b42318', fontSize: '13px', lineHeight: '1.7' },
+    }, '这一版丢掉了要紧的东西，因此没有采用：' + entry.missing.join('、')
+      + '。这些是数字、路径或者文件名，改写时把原文的说法换掉就可能出错。'))
+  }
+
+  // 采纳了但丢了代码名字的，单独提一句，不影响使用
+  if (entry.softMissing.length > 0) {
+    rows.push(h('div', {
+      key: 'sm',
+      style: { marginBottom: '8px', color: '#8a6d00', fontSize: '13px', lineHeight: '1.7' },
+    }, '这一版已经采用，但下面这些代码里的名字没保留：' + entry.softMissing.join('、')
+      + '。它们只是作者随手写的代号，一般不影响，看到时心里有数就行。'))
+  }
+
   if (rejectedOnly) {
     rows.push(h('div', {
       key: 'w',
@@ -152,12 +179,7 @@ function detail(entry: Entry) {
         marginBottom: '8px', padding: '8px 10px', borderRadius: '6px',
         background: '#fff8e1', border: '1px solid #ffe0a3', fontSize: '13px', lineHeight: '1.7',
       },
-    }, [
-      h('div', { key: 't', style: { fontWeight: 600, marginBottom: '2px' } }, '这一版改写被驳回，页面上用的还是原文'),
-      h('div', { key: 'b' }, entry.missing.length > 0
-        ? '它丢掉了原文里的 ' + entry.missing.join('、') + '。下面把它整段列出来，原文里对应的词标了红色，改写版里底色发黄的句子在原文里找不到对应，看的时候要对着原文核一遍。'
-        : '下面把它整段列出来，底色发黄的句子在原文里找不到对应，看的时候要对着原文核一遍。'),
-    ]))
+    }, '这一版改写没有采用，页面上用的还是原文。下面把它整段列出来，原文里对应的词标了红色，改写版里底色发黄的句子在原文里找不到对应，看的时候要对着原文核一遍。'))
   }
 
   rows.push(h('div', { key: 'x', style: { display: 'flex', gap: '10px' } }, [
@@ -167,7 +189,7 @@ function detail(entry: Entry) {
       '#fafafa',
     ),
     textBlock(
-      rejectedOnly ? '改写后（被驳回，黄底句子请对照原文）' : (shown ? '改写后' : '改写后（无，未产生可用的改写）'),
+      rejectedOnly ? '改写后（没有采用，黄底句子请对照原文）' : (shown ? '改写后' : '改写后（无，没有产生可用的改写）'),
       rejectedOnly ? withRiskyMarks(shown, riskySentences(entry.original, shown)) : plain(shown),
       rejectedOnly ? '#fffdf5' : '#f4f8ff',
     ),

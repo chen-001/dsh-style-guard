@@ -67,6 +67,12 @@ check('数字变了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace(
 check('路径少了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace('/nas197/a/b.h5', '那个文件')).ok === false)
 check('名字少了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace('`tail_v3.py`', '那个脚本')).ok === false)
 check('只是换说法时通过', preservesFacts(ORIGINAL, REWRITTEN).ok === true)
+check('数字丢了算要紧的', JSON.stringify(preservesFacts('值是 5089。', '值是这个数。').hard) === '["5089"]')
+check('路径丢了算要紧的', preservesFacts('见 /nas197/a.h5。', '见那个文件。').ok === false)
+check('文件名丢了算要紧的', preservesFacts('叫 `tail_v3.py`。', '叫那个脚本。').ok === false)
+const soft = preservesFacts('看 `main` 这一段和 `session-` 这个前缀。', '看这一段和这个前缀。')
+check('代码里的普通名字丢了不挡路', soft.ok === true)
+check('但会记下来', JSON.stringify(soft.soft) === '["main","session-"]')
 
 // 5. 审改轮次与失败路径
 const seen = []
@@ -87,6 +93,25 @@ const rejected = await improve(ORIGINAL, 2, Date.now() + 60000, {
 check('改了事实就退回原文', rejected.text === ORIGINAL && rejected.roundsRun === 0)
 check('退回时记下丢了什么', Array.isArray(rejected.rejected?.missing) && rejected.rejected.missing.length > 0)
 check('被驳回的那一版也留下来', rejected.rejectedText === '完全换掉的一段话，数字全丢了。')
+
+// 只丢了代码名字的改写照常采用，但要记账
+const SOFT_SOURCE = '看 `main` 这一段。值是 5089。'
+const softLost = await improve(SOFT_SOURCE, 1, Date.now() + 60000, {
+  now: () => Date.now(),
+  critique: async () => ({ problems: ['有毛病'], verdict: '' }),
+  rewrite: async () => '看这一段。值是 5089。',
+})
+check('只丢代码名字时按采用处理', softLost.roundsRun === 1 && softLost.text === '看这一段。值是 5089。')
+check('采纳时记下丢了哪个名字', JSON.stringify(softLost.softMissing) === '["main"]')
+check('采纳时说明里提到这件事', softLost.notes.some(item => item.includes('代码里的名字')))
+
+// 文件名算要紧的，丢了就整段作废
+const fileLost = await improve(SOFT_SOURCE, 1, Date.now() + 60000, {
+  now: () => Date.now(),
+  critique: async () => ({ problems: ['有毛病'], verdict: '' }),
+  rewrite: async () => '看这一段。值是 5088。',
+})
+check('数字被改动就作废', fileLost.roundsRun === 0 && fileLost.rejected?.missing.includes('5089') === true)
 
 // 6. 逐句比对：用来标出改写版里要和原文核对的句子
 const BASE = '第一句给结论。第二句讲原因。第三句给出 5089 这个数。'

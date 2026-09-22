@@ -10,6 +10,7 @@ export interface ReviewEntry {
     notes: string[];
     problems: string[];
     missing: string[];
+    softMissing: string[];
     original: string;
     rewritten: string;
     /** 被事实核对驳回的那一版改写。旧记录没有这个字段。 */

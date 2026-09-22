@@ -17,6 +17,7 @@ export interface ReviewEntry {
   notes: string[]
   problems: string[]
   missing: string[]
+  softMissing: string[]
   original: string
   rewritten: string
   /** 被事实核对驳回的那一版改写。旧记录没有这个字段。 */
@@ -44,6 +45,7 @@ function shape(raw: Record<string, unknown>): ReviewEntry {
     notes: strings(raw.notes),
     problems: strings(raw.problems),
     missing: strings(rejected?.missing),
+    softMissing: strings(raw.softMissing),
     original: pick(raw.original, ''),
     rewritten: pick(raw.rewritten, ''),
     rejectedText: pick(raw.rejectedText, ''),

@@ -189,6 +189,7 @@ async function* guarded(
           problems: result.problems,
           notes: result.notes,
           rejected: result.rejected,
+          softMissing: result.softMissing,
           dryRun: config.dryRun,
           applied: changed && !config.dryRun,
           original: collected.text,

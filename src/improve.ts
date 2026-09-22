@@ -22,6 +22,8 @@ export interface ImproveResult {
   /** 被事实核对拦下的那一版改写。留档用，让面板能把它和原文并排展示。 */
   rejected?: { missing: string[] }
   rejectedText?: string
+  /** 采纳了，但改写时没保住的代码名字。不挡路，只记账。 */
+  softMissing: string[]
   notes: string[]
 }
 
@@ -35,6 +37,7 @@ export async function improve(
   let current = original
   let roundsRun = 0
   const problems: string[] = []
+  const softMissing: string[] = []
   const notes: string[] = []
   for (let round = 0; round < rounds; round++) {
     if (deps.now() >= deadline) {
@@ -52,24 +55,35 @@ export async function improve(
     }
     problems.push(...critique.problems)
     const rewritten = await deps.rewrite(current, critique)
-    if (!rewritten || rewritten === current) {
-      notes.push('改写没有返回新文本')
+    if (!rewritten) {
+      notes.push('改写没有返回内容')
+      break
+    }
+    if (rewritten === current) {
+      notes.push('改写交回来的和原文一模一样，等于没改')
       break
     }
     const facts = preservesFacts(original, rewritten)
     if (!facts.ok) {
-      notes.push('改写动了事实，整段作废')
+      notes.push(roundsRun === 0
+        ? '改写动了数字、路径这类要紧的东西，整段作废'
+        : '后一轮改的动了要紧的东西，作废，保留前一轮的结果')
       return {
         text: current,
         roundsRun,
         problems,
-        rejected: { missing: facts.missing },
+        rejected: { missing: facts.hard },
         rejectedText: rewritten,
+        softMissing,
         notes,
       }
+    }
+    if (facts.soft.length > 0) {
+      softMissing.push(...facts.soft)
+      notes.push('这一版把 ' + facts.soft.length + ' 个代码里的名字写没了，其余一致，仍然采用')
     }
     current = rewritten
     roundsRun = round + 1
   }
-  return { text: current, roundsRun, problems, notes }
+  return { text: current, roundsRun, problems, softMissing, notes }
 }

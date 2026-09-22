@@ -16,6 +16,8 @@ export interface ImproveResult {
         missing: string[];
     };
     rejectedText?: string;
+    /** 采纳了，但改写时没保住的代码名字。不挡路，只记账。 */
+    softMissing: string[];
     notes: string[];
 }
 /** 反复审改到没问题、到轮次上限、或到时间上限为止。 */

@@ -19,7 +19,9 @@ export interface ImproveResult {
   text: string
   roundsRun: number
   problems: string[]
+  /** 被事实核对拦下的那一版改写。留档用，让面板能把它和原文并排展示。 */
   rejected?: { missing: string[] }
+  rejectedText?: string
   notes: string[]
 }
 
@@ -57,7 +59,14 @@ export async function improve(
     const facts = preservesFacts(original, rewritten)
     if (!facts.ok) {
       notes.push('改写动了事实，整段作废')
-      return { text: current, roundsRun, problems, rejected: { missing: facts.missing }, notes }
+      return {
+        text: current,
+        roundsRun,
+        problems,
+        rejected: { missing: facts.missing },
+        rejectedText: rewritten,
+        notes,
+      }
     }
     current = rewritten
     roundsRun = round + 1

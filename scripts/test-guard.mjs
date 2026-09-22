@@ -5,6 +5,7 @@
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { collect, preservesFacts, replaceText } from '../lib/guard.js'
 import { improve } from '../lib/improve.js'
+import { riskySentences, splitSentences } from '../lib/textdiff.js'
 
 let failed = 0
 function check(name, ok, detail) {
@@ -85,6 +86,15 @@ const rejected = await improve(ORIGINAL, 2, Date.now() + 60000, {
 })
 check('改了事实就退回原文', rejected.text === ORIGINAL && rejected.roundsRun === 0)
 check('退回时记下丢了什么', Array.isArray(rejected.rejected?.missing) && rejected.rejected.missing.length > 0)
+check('被驳回的那一版也留下来', rejected.rejectedText === '完全换掉的一段话，数字全丢了。')
+
+// 6. 逐句比对：用来标出改写版里要和原文核对的句子
+const BASE = '第一句给结论。第二句讲原因。第三句给出 5089 这个数。'
+check('断句按句号切开', splitSentences(BASE).length === 3)
+check('原样不动时一句都不标', riskySentences(BASE, BASE).length === 0)
+check('凭空多出来的一句会被标', JSON.stringify(riskySentences(BASE, '第一句给结论。第二句讲原因。这里凭空多了一句。第三句给出 5089 这个数。')) === '[2]')
+check('换了说法的句子会被标', JSON.stringify(riskySentences(BASE, '先说结论。再说原因。最后给出 5089 这个数。')) === '[0,1]')
+check('保留了数字的那句不标', riskySentences(BASE, '第一句给结论。第二句讲原因。第三句给出 5089 这个数。').length === 0)
 
 const timeout = await improve(ORIGINAL, 2, Date.now() - 1, {
   now: () => Date.now(),

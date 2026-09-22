@@ -7,6 +7,7 @@
  * 注册走延迟注入，老版本没有 sidebarRightTabs 服务时整段跳过，不影响本体。
  */
 import { createElement as h, useEffect, useState } from 'react'
+import { riskySentences, splitSentences } from '../src/textdiff.js'
 
 export const inject = ['slots']
 
@@ -26,6 +27,7 @@ interface Entry {
   missing: string[]
   original: string
   rewritten: string
+  rejectedText: string
 }
 
 interface SlotRegistration {
@@ -81,7 +83,34 @@ function statusOf(entry: Entry) {
   return badge('未改动', '#5b6169', '#f0f1f3')
 }
 
-function textBlock(title: string, body: string, tint: string) {
+/** 把正文里指定的词标出来，用在原文那一栏，指出改写版把哪些词丢了。 */
+function withHighlights(text: string, tokens: string[]) {
+  const usable = tokens.filter(token => token.length > 0)
+  if (usable.length === 0) return [h('span', { key: 'plain' }, text)]
+  const escaped = usable.map(token => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  let parts: string[]
+  try {
+    parts = text.split(new RegExp('(' + escaped.join('|') + ')', 'g'))
+  } catch {
+    return [h('span', { key: 'plain' }, text)]
+  }
+  return parts.map((part, index) => usable.includes(part)
+    ? h('mark', { key: index, style: { background: '#ffe0e0', color: '#b42318', padding: '0 2px', borderRadius: '3px' } }, part)
+    : h('span', { key: index }, part))
+}
+
+/** 改写后的正文，把和原文对不上的句子底色标出来。 */
+function withRiskyMarks(text: string, risky: number[]) {
+  return splitSentences(text).map((sentence, index) => risky.includes(index)
+    ? h('span', {
+      key: index,
+      title: '这句在原文里找不到对应，可能是新写的或改动很大，请对照原文',
+      style: { background: '#fff1c2', borderRadius: '3px', padding: '0 1px' },
+    }, sentence)
+    : h('span', { key: index }, sentence))
+}
+
+function textBlock(title: string, children: unknown, tint: string) {
   return h('div', { style: { flex: '1 1 0', minWidth: '0' } }, [
     h('div', { key: 't', style: { ...MUTED, marginBottom: '4px' } }, title),
     h('pre', {
@@ -91,8 +120,12 @@ function textBlock(title: string, body: string, tint: string) {
         whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '260px',
         overflow: 'auto', fontSize: '12px', lineHeight: '1.6',
       },
-    }, body || '（空）'),
+    }, children),
   ])
+}
+
+function plain(text: string) {
+  return [h('span', { key: 'plain' }, text || '（空）')]
 }
 
 function detail(entry: Entry) {
@@ -107,13 +140,37 @@ function detail(entry: Entry) {
   if (entry.notes.length > 0) {
     rows.push(h('div', { key: 'n', style: { ...MUTED, marginBottom: '8px' } }, '处理结果 ' + entry.notes.join('；')))
   }
-  if (entry.missing.length > 0) {
-    rows.push(h('div', { key: 'm', style: { marginBottom: '8px', color: '#b42318', fontSize: '13px' } },
-      '驳回原因，改写后少了 ' + entry.missing.join('、') + '，整段作废用原文'))
+
+  // 驳回的那一版也拿出来展示，只是要标明哪里不能照抄
+  const rejectedOnly = entry.rewritten.length === 0 && entry.rejectedText.length > 0
+  const shown = entry.rewritten.length > 0 ? entry.rewritten : entry.rejectedText
+
+  if (rejectedOnly) {
+    rows.push(h('div', {
+      key: 'w',
+      style: {
+        marginBottom: '8px', padding: '8px 10px', borderRadius: '6px',
+        background: '#fff8e1', border: '1px solid #ffe0a3', fontSize: '13px', lineHeight: '1.7',
+      },
+    }, [
+      h('div', { key: 't', style: { fontWeight: 600, marginBottom: '2px' } }, '这一版改写被驳回，页面上用的还是原文'),
+      h('div', { key: 'b' }, entry.missing.length > 0
+        ? '它丢掉了原文里的 ' + entry.missing.join('、') + '。下面把它整段列出来，原文里对应的词标了红色，改写版里底色发黄的句子在原文里找不到对应，看的时候要对着原文核一遍。'
+        : '下面把它整段列出来，底色发黄的句子在原文里找不到对应，看的时候要对着原文核一遍。'),
+    ]))
   }
+
   rows.push(h('div', { key: 'x', style: { display: 'flex', gap: '10px' } }, [
-    textBlock('原版', entry.original, '#fafafa'),
-    textBlock(entry.rewritten ? '改写后' : '改写后（无，未产生可用的改写）', entry.rewritten, '#f4f8ff'),
+    textBlock(
+      entry.missing.length > 0 ? '原版（红色是改写版丢掉的词）' : '原版',
+      entry.missing.length > 0 ? withHighlights(entry.original, entry.missing) : plain(entry.original),
+      '#fafafa',
+    ),
+    textBlock(
+      rejectedOnly ? '改写后（被驳回，黄底句子请对照原文）' : (shown ? '改写后' : '改写后（无，未产生可用的改写）'),
+      rejectedOnly ? withRiskyMarks(shown, riskySentences(entry.original, shown)) : plain(shown),
+      rejectedOnly ? '#fffdf5' : '#f4f8ff',
+    ),
   ]))
   return h('div', { key: 'd', style: { marginTop: '10px' } }, rows)
 }

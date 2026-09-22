@@ -19,6 +19,8 @@ export interface ReviewEntry {
   missing: string[]
   original: string
   rewritten: string
+  /** 被事实核对驳回的那一版改写。旧记录没有这个字段。 */
+  rejectedText: string
 }
 
 function pick(value: unknown, fallback: string): string {
@@ -44,6 +46,7 @@ function shape(raw: Record<string, unknown>): ReviewEntry {
     missing: strings(rejected?.missing),
     original: pick(raw.original, ''),
     rewritten: pick(raw.rewritten, ''),
+    rejectedText: pick(raw.rejectedText, ''),
   }
 }
 

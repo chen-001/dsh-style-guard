@@ -11,9 +11,11 @@ export interface ImproveResult {
     text: string;
     roundsRun: number;
     problems: string[];
+    /** 被事实核对拦下的那一版改写。留档用，让面板能把它和原文并排展示。 */
     rejected?: {
         missing: string[];
     };
+    rejectedText?: string;
     notes: string[];
 }
 /** 反复审改到没问题、到轮次上限、或到时间上限为止。 */

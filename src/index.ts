@@ -193,6 +193,8 @@ async function* guarded(
           applied: changed && !config.dryRun,
           original: collected.text,
           rewritten: changed ? result.text : undefined,
+          // 被驳回的那一版也留档，面板要把它和原文并排展示，并标出哪里要小心
+          rejectedText: result.rejectedText,
         })
         if (changed && !config.dryRun) out = replaceText(chunks, result.text)
       }

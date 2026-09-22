@@ -12,6 +12,8 @@ export interface ReviewEntry {
     missing: string[];
     original: string;
     rewritten: string;
+    /** 被事实核对驳回的那一版改写。旧记录没有这个字段。 */
+    rejectedText: string;
 }
 /**
  * 读最近的若干条审查记录。

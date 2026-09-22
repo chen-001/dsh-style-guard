@@ -258,7 +258,8 @@ function registerRecordsApi(ctx: Context, config: Config): void {
         path: API_PATH,
         handler: (req: { url?: string }, res: { writeHead: (code: number, headers: Record<string, string>) => void, end: (body: string) => void }) => {
           const limit = limitOf(req?.url)
-          const body = JSON.stringify({ records: readRecentReviews(config.auditPath, limit) })
+          const session = sessionOf(req?.url)
+          const body = JSON.stringify({ records: readRecentReviews(config.auditPath, limit, session) })
           res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
           res.end(body)
         },
@@ -274,4 +275,15 @@ function limitOf(url: string | undefined): number {
   const match = /[?&]limit=(\d+)/.exec(url ?? '')
   const parsed = match ? Number.parseInt(match[1] ?? '', 10) : Number.NaN
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 200) : 50
+}
+
+/** 从请求地址里取会话编号。取不到就不过滤，返回空串。 */
+function sessionOf(url: string | undefined): string {
+  const match = /[?&]session=([^&]*)/.exec(url ?? '')
+  if (!match?.[1]) return ''
+  try {
+    return decodeURIComponent(match[1]).trim()
+  } catch {
+    return match[1].trim()
+  }
 }

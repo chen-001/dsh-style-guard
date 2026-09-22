@@ -133,7 +133,8 @@ function recordCard(entry: Entry, index: number) {
   ])
 }
 
-function Panel() {
+function Panel(props: { sessionId?: string }) {
+  const sessionId = props.sessionId
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [records, setRecords] = useState<Entry[]>([])
@@ -142,7 +143,8 @@ function Panel() {
   useEffect(() => {
     let alive = true
     setLoading(true)
-    fetch(API)
+    const url = sessionId ? API + '&session=' + encodeURIComponent(sessionId) : API
+    fetch(url)
       .then(response => response.json())
       .then((data: { records?: Entry[] }) => {
         if (!alive) return
@@ -156,7 +158,7 @@ function Panel() {
         setLoading(false)
       })
     return () => { alive = false }
-  }, [tick])
+  }, [tick, sessionId])
 
   const adopted = records.filter(entry => entry.applied).length
   const rejected = records.filter(entry => !entry.applied && entry.missing.length > 0).length
@@ -171,7 +173,7 @@ function Panel() {
       }, '刷新'),
     ]),
     h('div', { key: 'stat', style: { ...MUTED, marginBottom: '10px' } },
-      '最近 ' + records.length + ' 次，采纳 ' + adopted + '，驳回 ' + rejected),
+      (sessionId ? '本会话 ' : '未取到会话编号，显示全部会话的 ') + records.length + ' 次，采纳 ' + adopted + '，驳回 ' + rejected),
     error ? h('div', { key: 'err', style: { color: '#b42318' } }, '读取失败 ' + error) : null,
     loading ? h('div', { key: 'load', style: MUTED }, '读取中…') : null,
     records.length === 0 && !loading ? h('div', { key: 'empty', style: MUTED }, '还没有记录。') : null,
@@ -202,7 +204,9 @@ export function apply(ctx: ClientContext): void {
         }))
         own(ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
           { name: 'sidebar.right.pane.tab', key: TAB_ID },
-          () => h(Panel),
+          (props: Record<string, unknown>) => h(Panel, {
+            sessionId: typeof props.sessionId === 'string' ? props.sessionId : undefined,
+          }),
         )))
       } catch {
         for (const dispose of disposers) dispose()

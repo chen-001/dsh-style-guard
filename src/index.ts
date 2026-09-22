@@ -1,0 +1,238 @@
+/**
+ * @dsh-external/dsh-style-guard
+ *
+ * 拦在模型的输出流中间。整段话先落进这里，检查并改写之后才交给上层，
+ * 所以页面上显示的和写进对话记录的都是改写后的版本，不会先出现一版难读的。
+ *
+ * 三件必须做的事（这个插件站在每次回复的必经之路上）：
+ * 1. 只拦够长的回复，要调用工具的那几轮原样放过去；
+ * 2. 改写的前后核对数字、路径、反引号里的名字，对不上就整段作废用原文；
+ * 3. 自己任何一步失败或超时都放行原文，不能让用户的对话卡住。
+ */
+import type { Context } from 'cordis'
+import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import z from 'schemastery'
+import { appendAudit, DEFAULT_AUDIT_PATH } from './audit.js'
+import { critiqueReply, isOwnCall, rewriteReply } from './critic.js'
+import { collect, replaceText } from './guard.js'
+import { improve } from './improve.js'
+import { DEFAULT_RUBRIC_PATH, loadRubric } from './rubric.js'
+
+export const name = '@dsh-external/dsh-style-guard'
+export const inject = ['llm', 'agents']
+
+export interface Config {
+  /** 总开关。 */
+  enabled: boolean
+  /** true 时只检查、记录，不真的替换页面上的文字。 */
+  dryRun: boolean
+  /** 正文短于这个字数就不检查。 */
+  minChars: number
+  /** 检查加改写做几轮，上限 2。 */
+  rounds: number
+  /** 检查和改写总共允许多花多少毫秒，超了用手上已有的版本。 */
+  maxExtraMs: number
+  /** 只处理这些会话，留空表示全部。 */
+  sessions: string[]
+  /** 只处理主 agent，跳过子 agent。 */
+  onlyRootAgents: boolean
+  /** 检查与改写用哪个服务商，留空表示跟主模型一致。 */
+  provider: string
+  /** 检查与改写用哪个模型，留空表示跟主模型一致。 */
+  model: string
+  /** 是否把跳过的原因也记进日志。 */
+  verbose: boolean
+  /** 是否把每一次模型调用都记进日志，用来排查插件有没有收到事件。 */
+  trace: boolean
+  /** 审查记录写到哪。 */
+  auditPath: string
+  /** 规范从哪读。 */
+  rubricPath: string
+}
+
+export const Config = z.object({
+  enabled: z.boolean().default(true),
+  dryRun: z.boolean().default(true),
+  minChars: z.number().default(500),
+  rounds: z.number().default(1),
+  maxExtraMs: z.number().default(90000),
+  sessions: z.array(z.string()).default([]),
+  onlyRootAgents: z.boolean().default(true),
+  provider: z.string().default(''),
+  model: z.string().default(''),
+  verbose: z.boolean().default(false),
+  trace: z.boolean().default(false),
+  auditPath: z.string().default(DEFAULT_AUDIT_PATH),
+  rubricPath: z.string().default(DEFAULT_RUBRIC_PATH),
+})
+
+/** 插件配置文件。改这里的值之后重载插件即可生效，不用重新构建。 */
+export const CONFIG_PATH = join(homedir(), '.dsh', 'style-guard', 'config.json')
+
+/** 把配置文件里的字段盖在内置默认值上面。读不到或格式不对就用默认值。 */
+function withFileOverrides(config: Config): Config {
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as Partial<Config>
+    return { ...config, ...parsed }
+  } catch {
+    return config
+  }
+}
+
+/**
+ * 取 agent 服务。用 reflect.get 而不是直接读 ctx.agents。
+ * 直接读一个没声明的服务会当场抛错，而这里位于每次模型调用的必经之路上，
+ * 一旦抛错整轮对话都起不来，所以宁可拿不到也不要抛。
+ */
+function agentRegistry(ctx: Context): AgentRegistryLike | undefined {
+  const reflect = (ctx as unknown as { reflect?: { get: (name: string, strict?: boolean) => unknown } }).reflect
+  return reflect?.get('agents', false) as AgentRegistryLike | undefined
+}
+
+interface AgentRegistryLike {
+  currentInitiator?: () => unknown
+  roots?: () => unknown[]
+}
+
+function note(config: Config, options: GenerateOptions, reason: string): void {
+  if (!config.verbose) return
+  appendAudit(config.auditPath, {
+    kind: 'skip',
+    reason,
+    sessionId: String(options.sessionId ?? ''),
+    provider: options.provider,
+    model: options.model,
+  })
+}
+
+/**
+ * 判断这次模型调用是不是主 agent 写回复的那一次。
+ *
+ * 不用框架里的 isAgentLoopRequest。那个判断依据是一个按对象身份记录的弱集合，
+ * 而插件构建时链接的那份 dsh-llm 和运行中宿主加载的那份是两个模块实例，
+ * 弱集合不共享，判断永远是假。改用两条能直接看见的线索：
+ * 主 agent 的请求是深度冻结的，而且不带 purpose（压缩、起标题这类附带调用会带）。
+ */
+function looksLikeAgentCall(options: GenerateOptions): boolean {
+  if (isOwnCall(options)) return false
+  if (options.purpose !== undefined) return false
+  return Object.isFrozen(options)
+}
+
+/** 判断这次调用是否归本插件管。返回空串表示管，返回原因表示跳过。 */
+function skipReason(ctx: Context, config: Config, options: GenerateOptions): string {
+  if (config.sessions.length > 0) {
+    const sessionId = options.sessionId === undefined ? '' : String(options.sessionId)
+    if (!sessionId || !config.sessions.includes(sessionId)) return '不在指定的会话里'
+  }
+  if (config.onlyRootAgents) {
+    const agents = agentRegistry(ctx)
+    const current = agents?.currentInitiator?.()
+    const roots = agents?.roots?.()
+    if (current && Array.isArray(roots) && !roots.includes(current)) return '子 agent 的调用'
+  }
+  return ''
+}
+
+async function* guarded(
+  ctx: Context,
+  config: Config,
+  options: GenerateOptions,
+  source: AsyncIterable<StreamChunk>,
+): AsyncIterable<StreamChunk> {
+  const started = Date.now()
+  const chunks: StreamChunk[] = []
+  for await (const chunk of source) chunks.push(chunk)
+
+  let out = chunks
+  try {
+    const collected = collect(chunks)
+    if (collected.hasToolCall) {
+      note(config, options, '这一轮在调用工具')
+    } else if (collected.text.length < config.minChars) {
+      note(config, options, '回复太短')
+    } else {
+      const rubric = loadRubric(config.rubricPath)
+      if (!rubric) {
+        note(config, options, '读不到规范')
+      } else {
+        const route = {
+          provider: config.provider || options.provider,
+          model: config.model || options.model,
+        }
+        const result = await improve(
+          collected.text,
+          Math.min(Math.max(Math.round(config.rounds), 1), 2),
+          started + config.maxExtraMs,
+          {
+            now: () => Date.now(),
+            critique: text => critiqueReply(ctx, route, rubric, text, options.signal),
+            rewrite: (text, critique) => rewriteReply(ctx, route, rubric, text, critique, options.signal),
+          },
+        )
+        const changed = result.roundsRun > 0 && result.text !== collected.text
+        appendAudit(config.auditPath, {
+          kind: 'review',
+          sessionId: String(options.sessionId ?? ''),
+          provider: route.provider,
+          model: route.model,
+          chars: collected.text.length,
+          ms: Date.now() - started,
+          roundsRun: result.roundsRun,
+          problems: result.problems,
+          notes: result.notes,
+          rejected: result.rejected,
+          dryRun: config.dryRun,
+          applied: changed && !config.dryRun,
+          original: collected.text,
+          rewritten: changed ? result.text : undefined,
+        })
+        if (changed && !config.dryRun) out = replaceText(chunks, result.text)
+      }
+    }
+  } catch (error) {
+    appendAudit(config.auditPath, {
+      kind: 'error',
+      sessionId: String(options.sessionId ?? ''),
+      error: String(error),
+    })
+    out = chunks
+  }
+  yield* out
+}
+
+export function apply(ctx: Context, schemaConfig: Config): void {
+  const config = withFileOverrides(schemaConfig)
+  if (!config.enabled) return
+  // 整个判断包在 try 里。这个位置在每次模型调用的必经之路上，
+  // 这里抛一个错，整轮对话就起不来，所以任何意外都退回原始流。
+  ctx.on('llm/stream', (options, next) => {
+    try {
+      if (config.trace) {
+        appendAudit(config.auditPath, {
+          kind: 'tick',
+          agentCall: looksLikeAgentCall(options),
+          frozen: Object.isFrozen(options),
+          purpose: options.purpose,
+          messages: options.messages?.length,
+          provider: options.provider,
+          model: options.model,
+          sessionId: String(options.sessionId ?? ''),
+        })
+      }
+      if (!looksLikeAgentCall(options)) return next()
+      const reason = skipReason(ctx, config, options)
+      if (reason) {
+        note(config, options, reason)
+        return next()
+      }
+      return guarded(ctx, config, options, next())
+    } catch (error) {
+      appendAudit(config.auditPath, { kind: 'error', where: 'listen', error: String(error) })
+      return next()
+    }
+  })
+}

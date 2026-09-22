@@ -1,0 +1,12 @@
+# dsh bundle patch：把风格检查插件插进 profile 的层。
+#
+# 装进 profile：
+#   dsh plugin --profile web add github:dsh-external/dsh-style-guard
+#
+# 这一行只负责挂载。具体行为由配置决定，默认 dryRun 打开，也就是先只检查、
+# 只记日志，不替换页面上的文字。确认它改得可以之后再关掉。
+- insert:
+    - id: dsh-style-guard
+      name: '@dsh-external/dsh-style-guard'
+      config:
+        dryRun: true

@@ -1,0 +1,43 @@
+{
+  "name": "@dsh-external/dsh-style-guard",
+  "version": "0.1.0",
+  "description": "回复送出前的语言风格检查与改写：拦在模型输出流中间，先检查、再改写，然后把结果交给页面和会话记录。",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "files": [
+    "lib",
+    "src",
+    "scripts",
+    "cordis.patch.yml",
+    "tsconfig.json",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "license": "BSD-3-Clause",
+  "engines": {
+    "dsh": ">=0.0.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "cordis": ">=4.0.0-rc <5",
+    "schemastery": "^3.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "prepack": "bash scripts/build.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/test-guard.mjs",
+    "test:runtime": "node scripts/test-runtime.mjs"
+  }
+}

@@ -26,7 +26,7 @@ Any failure or timeout inside the plugin passes the original through.
 ## Install
 
 ```sh
-dsh plugin --profile web add github:dsh-external/dsh-style-guard
+dsh plugin --profile web add github:chen-001/dsh-style-guard
 ```
 
 `lib/` is committed, so a git install needs no build authorization.

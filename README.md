@@ -22,7 +22,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add github:dsh-external/dsh-style-guard
+dsh plugin --profile web add github:chen-001/dsh-style-guard
 ```
 
 `lib/` 已随仓库提交，git 安装不需要授权运行构建脚本。

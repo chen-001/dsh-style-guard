@@ -65,52 +65,78 @@ export function replaceText(chunks: readonly StreamChunk[], rewritten: string): 
   return emitted ? out : chunks.slice()
 }
 
-const NUMBER = /-?\d+(?:\.\d+)?/g
+// 只认独立成词的数量。夹在字母里的数字（tail_v3.py 的那个 3）不算，
+// 否则丢一个文件名会连带把里面的数字当成要紧的东西。
+const NUMBER = /(?<![\w.\-])\d+(?:\.\d+)*(?![\w.])/g
 const BACKTICK = new RegExp('`([^`\\n]+)`', 'g')
 const PATH = /(?:[A-Za-z]:)?\/[A-Za-z0-9_./-]{3,}/g
 
-function tokens(text: string): string[] {
-  const found = [
-    ...text.matchAll(NUMBER),
-    ...text.matchAll(BACKTICK),
-    ...text.matchAll(PATH),
-  ].map(match => match[1] ?? match[0])
-  return [...new Set(found)]
+/** 一个词，以及它为什么被记下来。 */
+export interface FactToken {
+  value: string
+  /**
+   * number 是正文里的数量，例如 5089、0.34、90 秒，改了或者丢了就可能出错，挡下改写。
+   * code 是作者标出来的名字，路径、文件名、反引号里的代号，改写时换成日常说法很正常，
+   * 只记账不挡路：读的人本来就记不住这些名字，卡住整段反而更贵。
+   */
+  kind: 'number' | 'code'
 }
 
-/** 像文件名的词，丢了要挡。 */
-const FILE_LIKE = /\.(py|rs|h5|hdf5|json|ya?ml|md|txt|csv|parquet|toml|sh|ts|tsx|js|mjs|cjs|log|tgz|zip|png|svg|cfg|ini)$/i
+/** 正文里哪些位置是作者标出来的名字。落在这些位置里的数字不算数量。 */
+function codeSpans(text: string): { start: number; end: number }[] {
+  const spans: { start: number; end: number }[] = []
+  for (const match of text.matchAll(BACKTICK)) {
+    const inner = match[1]
+    if (inner === undefined) continue
+    const start = (match.index ?? 0) + 1
+    spans.push({ start, end: start + inner.length })
+  }
+  for (const match of text.matchAll(PATH)) {
+    const start = match.index ?? 0
+    spans.push({ start, end: start + match[0].length })
+  }
+  return spans
+}
 
-/**
- * 丢掉的这个词要不要挡下整段改写。
- *
- * 数字、路径、像文件名的词都算要紧的，丢了就不敢用。
- * 其余反引号里的名字，例如 `main`、`session-`、`applied`，只是作者随手写的代号，
- * 改写时换成日常说法未必是错，挡下整段反而过度，单独记下来给人看就行。
- */
-export function isHardFact(token: string): boolean {
-  if (/\d/.test(token)) return true
-  if (token.includes('/')) return true
-  return FILE_LIKE.test(token)
+function inside(index: number, spans: { start: number; end: number }[]): boolean {
+  return spans.some(span => index >= span.start && index < span.end)
+}
+
+/** 把正文里的数量和名字都挑出来。 */
+export function readTokens(text: string): FactToken[] {
+  const spans = codeSpans(text)
+  const out = new Map<string, FactToken>()
+  for (const match of text.matchAll(BACKTICK)) {
+    if (match[1] !== undefined) out.set(match[1], { value: match[1], kind: 'code' })
+  }
+  for (const match of text.matchAll(PATH)) out.set(match[0], { value: match[0], kind: 'code' })
+  for (const match of text.matchAll(NUMBER)) {
+    const value = match[0]
+    const at = match.index ?? 0
+    if (inside(at, spans)) continue
+    if (out.has(value)) continue
+    out.set(value, { value, kind: 'number' })
+  }
+  return [...out.values()]
 }
 
 /** 事实核对的结果。 */
 export interface FactCheck {
-  /** 要紧的词一个没丢才算通过。 */
+  /** 数量一个没丢才算通过。 */
   ok: boolean
   /** 丢掉的词，全部。 */
   missing: string[]
-  /** 丢掉且挡下改写的词。 */
+  /** 丢掉且挡下改写的数量。 */
   hard: string[]
-  /** 丢掉但不挡路的词，主要是代码里随手写的名字。 */
+  /** 丢掉但不挡路的代码名字，路径、文件名、反引号代号都算。 */
   soft: string[]
 }
 
-/** 改写前后的事实核对。 */
+/** 改写前后的事实核对。只挡正文里的数量，代码名字丢了照常采用。 */
 export function preservesFacts(original: string, rewritten: string): FactCheck {
-  const after = new Set(tokens(rewritten))
-  const missing = tokens(original).filter(token => !after.has(token))
-  const hard = missing.filter(isHardFact)
-  const soft = missing.filter(token => !isHardFact(token))
-  return { ok: hard.length === 0, missing, hard, soft }
+  const after = new Set(readTokens(rewritten).map(token => token.value))
+  const missingTokens = readTokens(original).filter(token => !after.has(token.value))
+  const hard = missingTokens.filter(token => token.kind === 'number').map(token => token.value)
+  const soft = missingTokens.filter(token => token.kind === 'code').map(token => token.value)
+  return { ok: hard.length === 0, missing: [...hard, ...soft], hard, soft }
 }

@@ -20,24 +20,28 @@ export declare function collect(chunks: readonly StreamChunk[]): Collected;
  * 结构对不上就整封退回原件，宁可显示原文也不产生坏消息。
  */
 export declare function replaceText(chunks: readonly StreamChunk[], rewritten: string): StreamChunk[];
-/**
- * 丢掉的这个词要不要挡下整段改写。
- *
- * 数字、路径、像文件名的词都算要紧的，丢了就不敢用。
- * 其余反引号里的名字，例如 `main`、`session-`、`applied`，只是作者随手写的代号，
- * 改写时换成日常说法未必是错，挡下整段反而过度，单独记下来给人看就行。
- */
-export declare function isHardFact(token: string): boolean;
+/** 一个词，以及它为什么被记下来。 */
+export interface FactToken {
+    value: string;
+    /**
+     * number 是正文里的数量，例如 5089、0.34、90 秒，改了或者丢了就可能出错，挡下改写。
+     * code 是作者标出来的名字，路径、文件名、反引号里的代号，改写时换成日常说法很正常，
+     * 只记账不挡路：读的人本来就记不住这些名字，卡住整段反而更贵。
+     */
+    kind: 'number' | 'code';
+}
+/** 把正文里的数量和名字都挑出来。 */
+export declare function readTokens(text: string): FactToken[];
 /** 事实核对的结果。 */
 export interface FactCheck {
-    /** 要紧的词一个没丢才算通过。 */
+    /** 数量一个没丢才算通过。 */
     ok: boolean;
     /** 丢掉的词，全部。 */
     missing: string[];
-    /** 丢掉且挡下改写的词。 */
+    /** 丢掉且挡下改写的数量。 */
     hard: string[];
-    /** 丢掉但不挡路的词，主要是代码里随手写的名字。 */
+    /** 丢掉但不挡路的代码名字，路径、文件名、反引号代号都算。 */
     soft: string[];
 }
-/** 改写前后的事实核对。 */
+/** 改写前后的事实核对。只挡正文里的数量，代码名字丢了照常采用。 */
 export declare function preservesFacts(original: string, rewritten: string): FactCheck;

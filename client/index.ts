@@ -159,8 +159,8 @@ function detail(entry: Entry) {
     rows.push(h('div', {
       key: 'm',
       style: { marginBottom: '8px', color: '#b42318', fontSize: '13px', lineHeight: '1.7' },
-    }, '这一版丢掉了要紧的东西，因此没有采用：' + entry.missing.join('、')
-      + '。这些是数字、路径或者文件名，改写时把原文的说法换掉就可能出错。'))
+    }, '这一版把原文里的数字改掉或者弄丢了，因此没有采用：' + entry.missing.join('、')
+      + '。数字一般是你手上的结果和门槛，对不上就不能照它用。'))
   }
 
   // 采纳了但丢了代码名字的，单独提一句，不影响使用
@@ -168,8 +168,8 @@ function detail(entry: Entry) {
     rows.push(h('div', {
       key: 'sm',
       style: { marginBottom: '8px', color: '#8a6d00', fontSize: '13px', lineHeight: '1.7' },
-    }, '这一版已经采用，但下面这些代码里的名字没保留：' + entry.softMissing.join('、')
-      + '。它们只是作者随手写的代号，一般不影响，看到时心里有数就行。'))
+    }, '这一版已经采用，只是原文里的这些名字没保留：' + entry.softMissing.join('、')
+      + '。路径、文件名和代码里的代号都算这一类，不影响你读，需要照着改文件时看原文那一栏。'))
   }
 
   if (rejectedOnly) {

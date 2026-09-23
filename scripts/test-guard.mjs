@@ -62,17 +62,21 @@ const toolChunks = [
 ]
 check('有工具调用时能被识别', collect(toolChunks).hasToolCall === true)
 
-// 4. 事实核对
+// 4. 事实核对：只挡正文里的数量，路径与文件名只记账
 check('数字变了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace('5089', '5088')).ok === false)
-check('路径少了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace('/nas197/a/b.h5', '那个文件')).ok === false)
-check('名字少了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace('`tail_v3.py`', '那个脚本')).ok === false)
+check('数字丢了就作废', JSON.stringify(preservesFacts('值是 5089。', '值是这个数。').hard) === '["5089"]')
 check('只是换说法时通过', preservesFacts(ORIGINAL, REWRITTEN).ok === true)
-check('数字丢了算要紧的', JSON.stringify(preservesFacts('值是 5089。', '值是这个数。').hard) === '["5089"]')
-check('路径丢了算要紧的', preservesFacts('见 /nas197/a.h5。', '见那个文件。').ok === false)
-check('文件名丢了算要紧的', preservesFacts('叫 `tail_v3.py`。', '叫那个脚本。').ok === false)
+const pathLost = preservesFacts('见 /nas197/a.h5。', '见那个文件。')
+check('路径丢了不挡路', pathLost.ok === true)
+check('但会记账', JSON.stringify(pathLost.soft) === '["/nas197/a.h5"]')
+const fileLost = preservesFacts('叫 `tail_v3.py`。', '叫那个脚本。')
+check('文件名丢了不挡路', fileLost.ok === true)
+check('但会记账', JSON.stringify(fileLost.soft) === '["tail_v3.py"]')
 const soft = preservesFacts('看 `main` 这一段和 `session-` 这个前缀。', '看这一段和这个前缀。')
-check('代码里的普通名字丢了不挡路', soft.ok === true)
+check('代码里的代号丢了不挡路', soft.ok === true)
 check('但会记下来', JSON.stringify(soft.soft) === '["main","session-"]')
+check('夹在名字里的数字不算数量', preservesFacts('改 tail_v3.py 那一行。', '改那个脚本那一行。').ok === true)
+check('句子里的数字仍然算数量', JSON.stringify(preservesFacts('改 tail_v3.py 第 609 行。', '改那个脚本那一行。').hard) === '["609"]')
 
 // 5. 审改轮次与失败路径
 const seen = []
@@ -105,13 +109,13 @@ check('只丢代码名字时按采用处理', softLost.roundsRun === 1 && softLo
 check('采纳时记下丢了哪个名字', JSON.stringify(softLost.softMissing) === '["main"]')
 check('采纳时说明里提到这件事', softLost.notes.some(item => item.includes('代码里的名字')))
 
-// 文件名算要紧的，丢了就整段作废
-const fileLost = await improve(SOFT_SOURCE, 1, Date.now() + 60000, {
+// 数字被改动时整段作废
+const numberChanged = await improve(SOFT_SOURCE, 1, Date.now() + 60000, {
   now: () => Date.now(),
   critique: async () => ({ problems: ['有毛病'], verdict: '' }),
   rewrite: async () => '看这一段。值是 5088。',
 })
-check('数字被改动就作废', fileLost.roundsRun === 0 && fileLost.rejected?.missing.includes('5089') === true)
+check('数字被改动就作废', numberChanged.roundsRun === 0 && numberChanged.rejected?.missing.includes('5089') === true)
 
 // 6. 逐句比对：用来标出改写版里要和原文核对的句子
 const BASE = '第一句给结论。第二句讲原因。第三句给出 5089 这个数。'

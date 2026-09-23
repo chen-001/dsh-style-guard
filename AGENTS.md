@@ -11,6 +11,7 @@ DSH 回复风格检查插件。拦在模型的输出流中间，先检查、改�
 - **注入检查回归**：`node scripts/test-runtime.mjs <宿主 cordis 的 lib/index.js>`，用真实 Context 验证插件能挂载、主回复被拦、子 agent 与附带调用被放行。改动 inject 或判断逻辑之后必须跑一次。
 - **配置**：profile patch 的 `config`，可被 `~/.dsh/style-guard/config.json` 覆盖；改完重载插件即生效。
 - **面板数据**：host 侧 `registerRecordsApi` 用延迟注入挂一个只读接口 `/dsh-style-guard/api/records`，client 侧只读它，不碰文件。
+- **发版**：`package.json` 的版本号加一 → 提交 → 推 `main` → 给这次提交打上同名附注 tag 并推上去。每个版本都要有 tag，别只推分支。
 
 ## 三条必须守住的边界
 

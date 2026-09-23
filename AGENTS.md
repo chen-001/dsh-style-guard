@@ -5,7 +5,7 @@ DSH 回复风格检查插件。拦在模型的输出流中间，先检查、改�
 - **形态**：host + client 两半，bundle 插件，`cordis.patch.yml` 只有一行 insert。
   host 拦输出流并留档；client 在右侧栏挂一个标签页展示记录。
 - **入口**：`src/index.ts` 监听 `llm/stream` 瀑布。判断某次调用是不是主对话写回复，见 `looksLikeAgentCall`。
-- **模块**：`guard.ts` 分片收集与替换、事实核对；`improve.ts` 审改轮次；`critic.ts` 两次模型调用与提示词；`rubric.ts` 现读规范；`audit.ts` 留档。
+- **模块**：`guard.ts` 分片收集与替换、事实核对；`improve.ts` 审改轮次；`critic.ts` 两次模型调用与提示词；`voice.ts` 编辑手册（整段口吻的例子）与取用户问题；`rubric.ts` 现读规范；`audit.ts` 留档。
 - **构建**：`bash scripts/build.sh`（host，走 DSH_CHECKOUT 里的 tsc）加 `bash scripts/build-client.sh`（client，走同一个 checkout 里的 tsdown）。`npm run build:all` 两半一起。
 - **自测**：`node scripts/test-guard.mjs`，纯逻辑，不调用模型。
 - **注入检查回归**：`node scripts/test-runtime.mjs <宿主 cordis 的 lib/index.js>`，用真实 Context 验证插件能挂载、主回复被拦、子 agent 与附带调用被放行。改动 inject 或判断逻辑之后必须跑一次。
@@ -18,7 +18,7 @@ DSH 回复风格检查插件。拦在模型的输出流中间，先检查、改�
 1. 这个位置在每次模型调用的必经之路上，监听体必须包在 try 里，任何异常都退回原始流。
 2. 不要直接读没有声明 inject 的服务。曾经漏声明 `agents` 并用类型断言绕过，
    运行时照样抛错，整轮对话在模型开口前就断了。用 `reflect.get` 读可选服务。
-3. 改写必须过 `preservesFacts`，数字、路径、反引号名字少一个就整段作废。
+3. 改写必须过 `preservesFacts`，正文里的数字少一个就整段作废；路径和反引号名字丢了只记账不挡路。
 
 ## 两个踩过的坑
 

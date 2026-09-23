@@ -21,6 +21,7 @@ import { collect, replaceText } from './guard.js'
 import { improve } from './improve.js'
 import { readRecentReviews } from './records.js'
 import { DEFAULT_RUBRIC_PATH, loadRubric } from './rubric.js'
+import { lastUserQuestion } from './voice.js'
 
 export const name = '@dsh-external/dsh-style-guard'
 export const inject = ['llm', 'agents']
@@ -49,6 +50,12 @@ export interface Config {
   provider: string
   /** 检查与改写用哪个模型，留空表示跟主模型一致。 */
   model: string
+  /**
+   * 改写那一步的思考档位，留空表示不思考。
+   * 不思考时改写器只肯换词；开了思考它才会重新组织句子，代价是每条回复多等十几到几十秒。
+   * 档位名字要是这个模型在配置里认的那几个，例如 low、medium。
+   */
+  rewriteEffort: string
   /** 是否把跳过的原因也记进日志。 */
   verbose: boolean
   /** 是否把每一次模型调用都记进日志，用来排查插件有没有收到事件。 */
@@ -70,6 +77,7 @@ export const Config = z.object({
   modelFilter: z.string().default('deepseek'),
   provider: z.string().default(''),
   model: z.string().default(''),
+  rewriteEffort: z.string().default(''),
   verbose: z.boolean().default(false),
   trace: z.boolean().default(false),
   auditPath: z.string().default(DEFAULT_AUDIT_PATH),
@@ -176,14 +184,16 @@ async function* guarded(
           provider: config.provider || options.provider,
           model: config.model || options.model,
         }
+        // 检查和改写都要知道他问的是什么，否则分不清一句短答是自然还是缺主语
+        const question = lastUserQuestion(options.messages)
         const result = await improve(
           collected.text,
           Math.min(Math.max(Math.round(config.rounds), 1), 2),
           started + config.maxExtraMs,
           {
             now: () => Date.now(),
-            critique: text => critiqueReply(ctx, route, rubric, text, options.signal),
-            rewrite: (text, critique) => rewriteReply(ctx, route, rubric, text, critique, options.signal),
+            critique: text => critiqueReply(ctx, route, rubric, text, question, options.signal),
+            rewrite: (text, critique) => rewriteReply(ctx, route, rubric, text, critique, question, config.rewriteEffort, options.signal),
           },
         )
         const changed = result.roundsRun > 0 && result.text !== collected.text
@@ -202,6 +212,7 @@ async function* guarded(
           critiqueRaw: result.critiqueRaw,
           dryRun: config.dryRun,
           applied: changed && !config.dryRun,
+          question,
           original: collected.text,
           rewritten: changed ? result.text : undefined,
           // 被驳回的那一版也留档，面板要把它和原文并排展示，并标出哪里要小心

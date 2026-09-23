@@ -4,6 +4,12 @@
  */
 import type { Context } from 'cordis';
 import type { Critique } from './improve.js';
+export declare const CRITIC_SYSTEM: string;
+export declare const REWRITE_SYSTEM: string;
+/** 检查那一步发给模型的话。导出给离线对照脚本用。 */
+export declare function critiquePrompt(rubric: string, text: string, question: string): string;
+/** 改写那一步发给模型的话。编辑手册放在规范后面，离正文更近，改写时更容易照着做。 */
+export declare function rewritePrompt(rubric: string, text: string, critique: Critique, question: string): string;
 /** 这次调用是不是本插件自己发的。 */
 export declare function isOwnCall(options: object): boolean;
 export interface Route {
@@ -25,6 +31,6 @@ export declare function salvageProblems(raw: string): string[];
  */
 export declare function parseCritiqueJson(raw: string): Record<string, unknown> | undefined;
 /** 审一遍。返回 undefined 表示这次审查没能得到可用结果。 */
-export declare function critiqueReply(ctx: Context, route: Route, rubric: string, text: string, signal?: AbortSignal): Promise<Critique | undefined>;
+export declare function critiqueReply(ctx: Context, route: Route, rubric: string, text: string, question: string, signal?: AbortSignal): Promise<Critique | undefined>;
 /** 按意见改一遍。返回 undefined 表示这次改写不可用。 */
-export declare function rewriteReply(ctx: Context, route: Route, rubric: string, text: string, critique: Critique, signal?: AbortSignal): Promise<string | undefined>;
+export declare function rewriteReply(ctx: Context, route: Route, rubric: string, text: string, critique: Critique, question: string, effort: string, signal?: AbortSignal): Promise<string | undefined>;

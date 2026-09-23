@@ -36,6 +36,12 @@ export interface Config {
     provider: string;
     /** 检查与改写用哪个模型，留空表示跟主模型一致。 */
     model: string;
+    /**
+     * 改写那一步的思考档位，留空表示不思考。
+     * 不思考时改写器只肯换词；开了思考它才会重新组织句子，代价是每条回复多等十几到几十秒。
+     * 档位名字要是这个模型在配置里认的那几个，例如 low、medium。
+     */
+    rewriteEffort: string;
     /** 是否把跳过的原因也记进日志。 */
     verbose: boolean;
     /** 是否把每一次模型调用都记进日志，用来排查插件有没有收到事件。 */
@@ -56,6 +62,7 @@ export declare const Config: z<Schemastery.ObjectS<{
     modelFilter: z<string, string>;
     provider: z<string, string>;
     model: z<string, string>;
+    rewriteEffort: z<string, string>;
     verbose: z<boolean, boolean>;
     trace: z<boolean, boolean>;
     auditPath: z<string, string>;
@@ -71,6 +78,7 @@ export declare const Config: z<Schemastery.ObjectS<{
     modelFilter: z<string, string>;
     provider: z<string, string>;
     model: z<string, string>;
+    rewriteEffort: z<string, string>;
     verbose: z<boolean, boolean>;
     trace: z<boolean, boolean>;
     auditPath: z<string, string>;

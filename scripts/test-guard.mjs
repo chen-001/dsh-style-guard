@@ -7,6 +7,7 @@ import { collect, preservesFacts, replaceText } from '../lib/guard.js'
 import { improve } from '../lib/improve.js'
 import { riskySentences, splitSentences } from '../lib/textdiff.js'
 import { parseCritiqueJson, salvageProblems } from '../lib/critic.js'
+import { lastUserQuestion } from '../lib/voice.js'
 
 let failed = 0
 function check(name, ok, detail) {
@@ -153,6 +154,19 @@ const noProblem = await improve(ORIGINAL, 2, Date.now() + 60000, {
   rewrite: async () => { throw new Error('不该被调用') },
 })
 check('没问题就不改写', noProblem.roundsRun === 0 && noProblem.notes.includes('没有发现问题'))
+
+// 找用户这一轮说的话：规范、运行环境说明、自动续跑都挂在用户这一侧，要跳过
+const say = (text, kind) => ({ role: 'user', content: [{ type: 'text', text }], ...(kind ? { source: { kind } } : {}) })
+const question = lastUserQuestion([
+  say('更早的问题', 'user'),
+  { role: 'assistant', content: [{ type: 'text', text: '回答' }] },
+  say('设置一下，只对 deepseek 生效', 'user'),
+  say('<system-reminder>\n规范</system-reminder>', 'agent-instructions'),
+  say('本环境装有……', 'runtime-context'),
+  say('Continue (The previous tool may not have completed.)', 'user'),
+])
+check('跳过规范和续跑，取到用户的问题', question === '设置一下，只对 deepseek 生效', question)
+check('太长的问题会截断', lastUserQuestion([say('字'.repeat(900), 'user')]).length < 700)
 
 console.log(failed === 0 ? '\n全部通过' : '\n失败 ' + failed + ' 项')
 process.exit(failed === 0 ? 0 : 1)

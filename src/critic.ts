@@ -14,7 +14,8 @@ const CRITIC_SYSTEM = [
   '你的任务只是找出这段话读起来费劲的地方，理由必须落在规范上，',
   '不要评价技术内容对不对，不要提规范之外的意见。',
   '只输出 JSON，形如 {"problems":["具体位置加一句为什么难读"],"verdict":"一句话总体判断"}。',
-  'problems 最多六条，按严重程度排序，没有问题时是空数组。不要输出别的字。',
+  'problems 最多四条，按严重程度排序，每条一句话、不超过六十字，没有问题时是空数组。',
+  '不要输出别的字，也不要展开解释。',
 ].join('')
 
 const REWRITE_SYSTEM = [
@@ -58,8 +59,9 @@ async function callText(ctx: Context, req: {
   prompt: string
   maxTokens: number
   signal?: AbortSignal
-}): Promise<string | undefined> {
+}): Promise<{ text: string; truncated: boolean }> {
   let text = ''
+  let truncated = false
   const options = {
     provider: req.route.provider,
     model: req.route.model,
@@ -78,6 +80,7 @@ async function callText(ctx: Context, req: {
     if (chunk.type === 'text-delta') text += chunk.text
     if (chunk.type === 'finish') {
       reason = chunk.reason.kind
+      if (chunk.reason.kind === 'max-tokens') truncated = true
       if (chunk.reason.kind === 'error') {
         const failure = chunk.reason.failure as { message?: string; code?: string }
         throw new Error('模型调用失败 ' + String(failure?.code) + ' ' + String(failure?.message))
@@ -87,7 +90,54 @@ async function callText(ctx: Context, req: {
   }
   const trimmed = text.trim()
   if (!trimmed) throw new Error('模型没有输出正文，结束原因是 ' + reason)
-  return trimmed
+  return { text: trimmed, truncated }
+}
+
+/**
+ * 从被截断的返回里尽量把问题清单抠出来。
+ *
+ * 输出上限用完时，JSON 会停在半截，最后那个大括号永远等不到。
+ * 这时不整段放弃，而是把 problems 数组里已经写完整的那些字符串一条条读出来，
+ * 丢掉被切断的最后一条。审查意见是给人看的一句话，少一条不影响用。
+ */
+export function salvageProblems(raw: string): string[] {
+  const key = raw.indexOf('"problems"')
+  if (key < 0) return []
+  const open = raw.indexOf('[', key)
+  if (open < 0) return []
+  const out: string[] = []
+  let index = open + 1
+  while (index < raw.length) {
+    // 遇到数组的右括号就说明这个清单到头了，后面的 verdict 不算
+    while (index < raw.length && raw[index] !== '"' && raw[index] !== ']') index++
+    if (index >= raw.length || raw[index] === ']') break
+    let cursor = index + 1
+    let body = ''
+    let closed = false
+    while (cursor < raw.length) {
+      const char = raw[cursor] ?? ''
+      if (char === '\\') {
+        body += raw.slice(cursor, cursor + 2)
+        cursor += 2
+        continue
+      }
+      if (char === '"') {
+        closed = true
+        break
+      }
+      body += char
+      cursor++
+    }
+    if (!closed) break
+    try {
+      const value = JSON.parse('"' + body + '"')
+      if (typeof value === 'string' && value.trim().length > 0) out.push(value)
+    } catch {
+      /* 半截的字符串跳过去 */
+    }
+    index = cursor + 1
+  }
+  return out.slice(0, 6)
 }
 
 /** 去掉模型习惯性套上的整篇代码围栏。 */
@@ -132,22 +182,28 @@ export async function critiqueReply(
   text: string,
   signal?: AbortSignal,
 ): Promise<Critique | undefined> {
-  const raw = await callText(ctx, {
+  const { text: raw, truncated } = await callText(ctx, {
     route,
     system: CRITIC_SYSTEM,
-    maxTokens: 3000,
+    maxTokens: 6000,
     signal,
     prompt: '规范如下。\n\n' + rubric + '\n\n=== 待审回复 ===\n' + text + '\n\n只输出 JSON。',
   })
-  if (!raw) return undefined
   const parsed = parseCritiqueJson(raw)
+  if (parsed) {
+    const problems = Array.isArray(parsed.problems)
+      ? parsed.problems.filter((item): item is string => typeof item === 'string').slice(0, 6)
+      : []
+    const verdict = typeof parsed.verdict === 'string' ? parsed.verdict : ''
+    return { problems, verdict }
+  }
+  // 整段读不出来时，退一步把已经写完整的问题一条条抠出来。
+  // 输出上限用完的话，JSON 会停在半截，最后那个大括号永远等不到。
+  const salvaged = salvageProblems(raw)
+  if (salvaged.length > 0) return { problems: salvaged, verdict: '' }
+  if (truncated) return { problems: [], verdict: '', unreadable: raw.slice(0, 400) }
   // 读不出来时把开头带回去留档，下一次遇到就不用猜它到底返回了什么
-  if (!parsed) return { problems: [], verdict: '', unreadable: raw.slice(0, 400) }
-  const problems = Array.isArray(parsed.problems)
-    ? parsed.problems.filter((item): item is string => typeof item === 'string').slice(0, 6)
-    : []
-  const verdict = typeof parsed.verdict === 'string' ? parsed.verdict : ''
-  return { problems, verdict }
+  return { problems: [], verdict: '', unreadable: raw.slice(0, 400) }
 }
 
 /** 按意见改一遍。返回 undefined 表示这次改写不可用。 */
@@ -159,7 +215,7 @@ export async function rewriteReply(
   critique: Critique,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  const raw = await callText(ctx, {
+  const { text: raw, truncated } = await callText(ctx, {
     route,
     system: REWRITE_SYSTEM,
     maxTokens: 8000,
@@ -180,7 +236,8 @@ export async function rewriteReply(
       '只输出改写后的正文。',
     ].join('\n'),
   })
-  if (!raw) return undefined
+  // 被截断的改写一定缺内容，宁可不用
+  if (truncated) return undefined
   const body = stripFence(raw)
   return body || undefined
 }

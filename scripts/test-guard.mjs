@@ -6,7 +6,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { collect, preservesFacts, replaceText } from '../lib/guard.js'
 import { improve } from '../lib/improve.js'
 import { riskySentences, splitSentences } from '../lib/textdiff.js'
-import { parseCritiqueJson } from '../lib/critic.js'
+import { parseCritiqueJson, salvageProblems } from '../lib/critic.js'
 
 let failed = 0
 function check(name, ok, detail) {
@@ -123,6 +123,14 @@ check('整段就是 JSON 时读得出来', parseCritiqueJson('{"problems":["a"],
 check('套着代码围栏也读得出来', parseCritiqueJson('\u0060\u0060\u0060json\n{"problems":[],"verdict":"ok"}\n\u0060\u0060\u0060')?.verdict === 'ok')
 check('前后带说明也读得出来', parseCritiqueJson('好的，结果如下：\n{"problems":["x"],"verdict":"y"}\n希望有帮助。')?.verdict === 'y')
 check('确实不是 JSON 时返回空', parseCritiqueJson('我读了一遍，感觉还行。') === undefined)
+
+// 截断的返回：最后那个大括号永远等不到，但已经写完的问题要抠出来
+const CUT = '{"problems":["第一条意见","第二条意见","第三条被切掉'
+check('截断时能抠出完整的问题', JSON.stringify(salvageProblems(CUT)) === '["第一条意见","第二条意见"]')
+const CUT_ESCAPED = '{"problems":["带引号\\"和逗号, 的意见","第二条"]}'
+check('带转义字符也读得对', JSON.stringify(salvageProblems(CUT_ESCAPED)) === '["带引号\\"和逗号, 的意见","第二条"]')
+check('完全读不出问题时给空', JSON.stringify(salvageProblems('没有数组结构')) === '[]')
+check('完整 JSON 也走得通', JSON.stringify(salvageProblems('{"problems":["a","b"],"verdict":"c"}')) === '["a","b"]')
 
 // 7. 逐句比对：用来标出改写版里要和原文核对的句子
 const BASE = '第一句给结论。第二句讲原因。第三句给出 5089 这个数。'

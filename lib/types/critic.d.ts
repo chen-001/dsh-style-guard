@@ -11,6 +11,14 @@ export interface Route {
     model: string;
 }
 /**
+ * 从被截断的返回里尽量把问题清单抠出来。
+ *
+ * 输出上限用完时，JSON 会停在半截，最后那个大括号永远等不到。
+ * 这时不整段放弃，而是把 problems 数组里已经写完整的那些字符串一条条读出来，
+ * 丢掉被切断的最后一条。审查意见是给人看的一句话，少一条不影响用。
+ */
+export declare function salvageProblems(raw: string): string[];
+/**
  * 从模型返回里挖出那个 JSON。
  * 先当整段就是 JSON；不是的话，退一步取第一个大括号到最后一个大括号之间的部分，
  * 模型常在 JSON 前后带一句说明，卡在整段解析上会把好好的审查结果丢掉。

@@ -40,12 +40,14 @@ try {
   const titleStream = source()
   assert.equal(ctx.waterfall('llm/stream', { ...options, purpose: 'title' }, () => titleStream), titleStream)
 
-  // 名字不带 deepseek 的模型整条放过去，连 agents 都不用查
+  // 名字里缺一个词就整条放过去，连 agents 都不用查
   const beforeOthers = registryReads
-  const otherStream = source()
-  const otherOptions = Object.freeze({ provider: 'test', model: 'gpt-4o', messages: [] })
-  assert.equal(ctx.waterfall('llm/stream', otherOptions, () => otherStream), otherStream)
-  assert.equal(registryReads, beforeOthers, 'other models must not even reach the agent check')
+  for (const model of ['gpt-4o', 'deepseek-v4.1', 'claude-4.6-flash']) {
+    const otherStream = source()
+    const otherOptions = Object.freeze({ provider: 'test', model, messages: [] })
+    assert.equal(ctx.waterfall('llm/stream', otherOptions, () => otherStream), otherStream, model + ' must pass through')
+  }
+  assert.equal(registryReads, beforeOthers, 'unmatched models must not even reach the agent check')
   console.log('PASS: root reply, child bypass, auxiliary-call bypass, other-model bypass under host injection checks')
 } finally {
   await fork.dispose()

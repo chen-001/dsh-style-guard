@@ -30,7 +30,10 @@ export interface Config {
     sessions: string[];
     /** 只处理主 agent，跳过子 agent。 */
     onlyRootAgents: boolean;
-    /** 只处理模型名字里带这段文字的请求，留空表示不按模型筛。 */
+    /**
+     * 只处理模型名字里都带这些字的请求。空格分开，写几个就要几个都在。
+     * 例如 deepseek flash 表示名字里既要有 deepseek 又要有 flash。留空表示不按模型筛。
+     */
     modelFilter: string;
     /** 检查与改写用哪个服务商，留空表示跟主模型一致。 */
     provider: string;

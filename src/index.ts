@@ -44,7 +44,10 @@ export interface Config {
   sessions: string[]
   /** 只处理主 agent，跳过子 agent。 */
   onlyRootAgents: boolean
-  /** 只处理模型名字里带这段文字的请求，留空表示不按模型筛。 */
+  /**
+   * 只处理模型名字里都带这些字的请求。空格分开，写几个就要几个都在。
+   * 例如 deepseek flash 表示名字里既要有 deepseek 又要有 flash。留空表示不按模型筛。
+   */
   modelFilter: string
   /** 检查与改写用哪个服务商，留空表示跟主模型一致。 */
   provider: string
@@ -74,7 +77,7 @@ export const Config = z.object({
   maxExtraMs: z.number().default(90000),
   sessions: z.array(z.string()).default([]),
   onlyRootAgents: z.boolean().default(true),
-  modelFilter: z.string().default('deepseek'),
+  modelFilter: z.string().default('deepseek flash'),
   provider: z.string().default(''),
   model: z.string().default(''),
   rewriteEffort: z.string().default(''),
@@ -139,11 +142,12 @@ function looksLikeAgentCall(options: GenerateOptions): boolean {
 
 /** 判断这次调用是否归本插件管。返回空串表示管，返回原因表示跳过。 */
 function skipReason(ctx: Context, config: Config, options: GenerateOptions): string {
-  // 按模型名字筛。名字对不上的说明这一轮的回复不是目标模型写的，不用管。
-  if (config.modelFilter.length > 0) {
-    const wanted = config.modelFilter.toLowerCase()
+  // 按模型名字筛。写成空格分开的几个词，就得每个都出现在名字里。
+  if (config.modelFilter.trim().length > 0) {
+    const wanted = config.modelFilter.toLowerCase().split(/\s+/).filter(word => word.length > 0)
     const name = String(options.model ?? '').toLowerCase()
-    if (!name.includes(wanted)) return '模型名字里没有 ' + config.modelFilter
+    const missing = wanted.filter(word => !name.includes(word))
+    if (missing.length > 0) return '模型名字里没有 ' + missing.join('、')
   }
   if (config.sessions.length > 0) {
     const sessionId = options.sessionId === undefined ? '' : String(options.sessionId)

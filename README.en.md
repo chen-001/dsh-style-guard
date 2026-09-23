@@ -51,7 +51,7 @@ Two sources, the second overriding the first.
 | `onlyRootAgents` | `true` | Only the main conversation; subagents are skipped. |
 | `sessions` | `[]` | Restrict to these sessions; empty means all. |
 | `provider` / `model` | `''` | Model used for the review calls; empty follows the main model. |
-| `rewriteEffort` | `''` | Reasoning effort for the rewrite call; empty disables thinking. Without it the rewriter mostly swaps words; `low` lets it restructure sentences at a cost of roughly 10-30 s per reply. |
+| `rewriteEffort` | `''` | Reasoning effort for the rewrite call; empty disables thinking. Without it the rewriter mostly swaps words; `low` or above lets it restructure sentences. Measured: `high` takes 20-60 s for two rounds, similar quality to `medium` but faster. |
 | `verbose` | `false` | Log the reason for every skip. |
 | `trace` | `false` | Log every model call, for diagnosing whether events arrive. |
 | `auditPath` | `~/.dsh/style-guard/log.jsonl` | Review log, with the full original and rewritten text. |

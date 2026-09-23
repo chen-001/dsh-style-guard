@@ -64,9 +64,18 @@ const toolChunks = [
 ]
 check('有工具调用时能被识别', collect(toolChunks).hasToolCall === true)
 
-// 4. 事实核对：只挡正文里的数量，路径与文件名只记账
+// 4. 事实核对：数字改错、多出来挡，没问数量时删数字只记账；路径与文件名只记账
 check('数字变了一个就作废', preservesFacts(ORIGINAL, REWRITTEN.replace('5089', '5088')).ok === false)
-check('数字丢了就作废', JSON.stringify(preservesFacts('值是 5089。', '值是这个数。').hard) === '["5089"]')
+const dropped = preservesFacts('值是 5089，测试 20 项通过。', '值是 5089，其余检查都通过。', '有没有做完')
+check('没问数量时删数字照常通过', dropped.ok === true)
+check('删掉的数字会记账', JSON.stringify(dropped.dropped) === '["20"]')
+check('问的就是数量时删数字作废', JSON.stringify(preservesFacts('有值 5089 个。', '有值的不少。', '有多少只股票有值').hard) === '["5089"]')
+check('问题里提到的数字不能删', JSON.stringify(preservesFacts('阈值 0.34 试过。', '阈值试过。', '0.34 是怎么来的').hard) === '["0.34"]')
+check('改写里多出原文没有的数字就作废', JSON.stringify(preservesFacts('分成两档。', '分成 2 档。').invented) === '["2"]')
+check('原文反引号里的数去掉反引号不算多出来', preservesFacts('丢了 `199` 那次。', '丢了 199 那次。').ok === true)
+check('检查模型判断没在问数量时，关键词让位', preservesFacts('耗时 15 秒。', '耗时不长。', '面板要显示每次改写耗时多久', false).ok === true)
+check('检查模型判断在问数量时，删数字作废', preservesFacts('耗时 15 秒。', '耗时不长。', '改完了吗', true).ok === false)
+check('"几乎"不算在问数量', preservesFacts('值是 5089。', '值是这个数。', '几乎都好了吗').ok === true)
 check('只是换说法时通过', preservesFacts(ORIGINAL, REWRITTEN).ok === true)
 const pathLost = preservesFacts('见 /nas197/a.h5。', '见那个文件。')
 check('路径丢了不挡路', pathLost.ok === true)
@@ -78,27 +87,27 @@ const soft = preservesFacts('看 `main` 这一段和 `session-` 这个前缀。'
 check('代码里的代号丢了不挡路', soft.ok === true)
 check('但会记下来', JSON.stringify(soft.soft) === '["main","session-"]')
 check('夹在名字里的数字不算数量', preservesFacts('改 tail_v3.py 那一行。', '改那个脚本那一行。').ok === true)
-check('句子里的数字仍然算数量', JSON.stringify(preservesFacts('改 tail_v3.py 第 609 行。', '改那个脚本那一行。').hard) === '["609"]')
+check('句子里的数字仍然算数量', JSON.stringify(preservesFacts('改 tail_v3.py 第 609 行。', '改那个脚本那一行。', '改了几行').hard) === '["609"]')
 
 // 5. 审改轮次与失败路径
 const seen = []
 const twoRounds = await improve(ORIGINAL, 2, Date.now() + 60000, {
   now: () => Date.now(),
   critique: async text => { seen.push(text); return { problems: ['第 1 句太长'], verdict: '还行' } },
-  rewrite: async (text, critique) => text + '（改' + critique.problems.length + '）',
+  rewrite: async (text, critique) => text + '（改' + '了'.repeat(critique.problems.length) + '）',
 })
 check('两轮会审两次', seen.length === 2, '实际 ' + seen.length)
-check('第二轮审的是第一轮改完的', seen[1]?.includes('（改1）') === true)
-check('两轮都改成功', twoRounds.roundsRun === 2 && twoRounds.text.endsWith('（改1）（改1）'))
+check('第二轮审的是第一轮改完的', seen[1]?.includes('（改了）') === true)
+check('两轮都改成功', twoRounds.roundsRun === 2 && twoRounds.text.endsWith('（改了）（改了）'))
 
 const rejected = await improve(ORIGINAL, 2, Date.now() + 60000, {
   now: () => Date.now(),
   critique: async () => ({ problems: ['有毛病'], verdict: '' }),
-  rewrite: async () => '完全换掉的一段话，数字全丢了。',
+  rewrite: async () => '完全换掉的一段话，值是 42。',
 })
 check('改了事实就退回原文', rejected.text === ORIGINAL && rejected.roundsRun === 0)
 check('退回时记下丢了什么', Array.isArray(rejected.rejected?.missing) && rejected.rejected.missing.length > 0)
-check('被驳回的那一版也留下来', rejected.rejectedText === '完全换掉的一段话，数字全丢了。')
+check('被驳回的那一版也留下来', rejected.rejectedText === '完全换掉的一段话，值是 42。')
 
 // 只丢了代码名字的改写照常采用，但要记账
 const SOFT_SOURCE = '看 `main` 这一段。值是 5089。'
@@ -111,13 +120,23 @@ check('只丢代码名字时按采用处理', softLost.roundsRun === 1 && softLo
 check('采纳时记下丢了哪个名字', JSON.stringify(softLost.softMissing) === '["main"]')
 check('采纳时说明里提到这件事', softLost.notes.some(item => item.includes('代码里的名字')))
 
+// 检查模型说在问数量，这个判断要传到改写和核对两处
+let passed
+const asked = await improve('有值 5089 个。', 1, Date.now() + 60000, {
+  now: () => Date.now(),
+  critique: async () => ({ problems: ['有毛病'], verdict: '', asksNumber: true }),
+  rewrite: async (text, critique) => { passed = critique.asksNumber; return '有值的不少。' },
+}, '改完了吗')
+check('在问数量的判断传给了改写', passed === true)
+check('在问数量时删了数字就作废', asked.roundsRun === 0 && JSON.stringify(asked.rejected?.missing) === '["5089"]')
+
 // 数字被改动时整段作废
 const numberChanged = await improve(SOFT_SOURCE, 1, Date.now() + 60000, {
   now: () => Date.now(),
   critique: async () => ({ problems: ['有毛病'], verdict: '' }),
   rewrite: async () => '看这一段。值是 5088。',
 })
-check('数字被改动就作废', numberChanged.roundsRun === 0 && numberChanged.rejected?.missing.includes('5089') === true)
+check('数字被改动就作废', numberChanged.roundsRun === 0 && numberChanged.rejected?.missing.includes('5088') === true)
 
 // 6. 检查那一步的返回解析：模型常在 JSON 前后带一句说明，不能因此丢掉整段审查
 check('整段就是 JSON 时读得出来', parseCritiqueJson('{"problems":["a"],"verdict":"b"}')?.verdict === 'b')

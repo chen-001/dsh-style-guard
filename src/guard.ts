@@ -120,23 +120,52 @@ export function readTokens(text: string): FactToken[] {
   return [...out.values()]
 }
 
+/**
+ * 用户的问题是不是在问数量。问的就是数量时，回答里的数字一个都不能删。
+ * "几乎"里的"几"不算。
+ */
+const ASKS_NUMBER = /多少|几(?!乎)|多大|多长|多久|多快|多高|多低|多重|数字|数值|数量|比例|占比|百分之|百分比|具体值/
+
+export function asksForNumbers(question: string): boolean {
+  return ASKS_NUMBER.test(question)
+}
+
 /** 事实核对的结果。 */
 export interface FactCheck {
-  /** 数量一个没丢才算通过。 */
+  /** 没有改错或多出来的数字，该留的数字也都在，才算通过。 */
   ok: boolean
-  /** 丢掉的词，全部。 */
-  missing: string[]
-  /** 丢掉且挡下改写的数量。 */
+  /** 挡下改写的数字，包括改写里凭空多出来的，和不许删却被删掉的。 */
   hard: string[]
+  /** 改写里凭空多出来的数字，原文哪里都找不到。hard 的一部分。 */
+  invented: string[]
+  /** 删掉了但允许删的数字。只记账，面板上提一句。 */
+  dropped: string[]
   /** 丢掉但不挡路的代码名字，路径、文件名、反引号代号都算。 */
   soft: string[]
 }
 
-/** 改写前后的事实核对。只挡正文里的数量，代码名字丢了照常采用。 */
-export function preservesFacts(original: string, rewritten: string): FactCheck {
+/**
+ * 改写前后的事实核对。
+ *
+ * 删数字是允许的，常规检查里的字节数、测试条数压成"其余检查都通过"正是规范要的。
+ * 挡的是三种情况。改写里出现原文没有的数字，说明改错或者编了；
+ * 用户问的就是数量，这时删哪个都不行；用户问题里提到的数字，回答里也要留着。
+ * 判断"原文有没有"时把代码名字里的数字也算上，原文写 `199`、改写去掉反引号写 199，不算多出来。
+ */
+export function preservesFacts(original: string, rewritten: string, question = '', asksNumber?: boolean): FactCheck {
   const after = new Set(readTokens(rewritten).map(token => token.value))
   const missingTokens = readTokens(original).filter(token => !after.has(token.value))
-  const hard = missingTokens.filter(token => token.kind === 'number').map(token => token.value)
+  const missingNumbers = missingTokens.filter(token => token.kind === 'number').map(token => token.value)
   const soft = missingTokens.filter(token => token.kind === 'code').map(token => token.value)
-  return { ok: hard.length === 0, missing: [...hard, ...soft], hard, soft }
+  const anywhere = new Set([...original.matchAll(NUMBER)].map(match => match[0]))
+  const invented = readTokens(rewritten)
+    .filter(token => token.kind === 'number' && !anywhere.has(token.value))
+    .map(token => token.value)
+  const asked = new Set([...question.matchAll(NUMBER)].map(match => match[0]))
+  // 检查模型判断过就听它的，关键词只在它没给判断时兜底。关键词会把"让面板显示耗时多久"也当成在问数
+  const keepAll = asksNumber ?? asksForNumbers(question)
+  const mustKeep = missingNumbers.filter(value => keepAll || asked.has(value))
+  const dropped = missingNumbers.filter(value => !mustKeep.includes(value))
+  const hard = [...invented, ...mustKeep]
+  return { ok: hard.length === 0, hard, invented, dropped, soft }
 }

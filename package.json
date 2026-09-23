@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-style-guard",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "回复送出前的语言风格检查与改写：拦在模型输出流中间，先检查、再改写，然后把结果交给页面和会话记录。",
   "private": true,
   "type": "module",

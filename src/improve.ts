@@ -7,6 +7,8 @@ import { preservesFacts } from './guard.js'
 export interface Critique {
   problems: string[]
   verdict: string
+  /** 检查模型判断用户这一轮是不是在问一个数量。没给判断时是 undefined。 */
+  asksNumber?: boolean
   /** 模型返回的东西读不成 JSON 时，这里放它的开头，用于排查。 */
   unreadable?: string
 }
@@ -26,6 +28,8 @@ export interface ImproveResult {
   rejectedText?: string
   /** 采纳了，但改写时没保住的代码名字。不挡路，只记账。 */
   softMissing: string[]
+  /** 采纳了，改写时删掉的数字。用户没问数量时允许删，只记账。 */
+  droppedNumbers: string[]
   /** 检查那一步返回的内容读不出来时，它的开头。 */
   critiqueRaw?: string
   notes: string[]
@@ -37,13 +41,21 @@ export async function improve(
   rounds: number,
   deadline: number,
   deps: ImproveDeps,
+  question = '',
 ): Promise<ImproveResult> {
   let current = original
   let roundsRun = 0
   const problems: string[] = []
   const softMissing: string[] = []
+  const droppedNumbers: string[] = []
   const notes: string[] = []
   let critiqueRaw: string | undefined
+  // 用户在不在问数量，按第一轮检查的判断，后面几轮沿用
+  let asksNumber: boolean | undefined
+  // 最后交出去的那一版丢了代码名字的话，说明里提一句。放在收尾统一做，免得两轮各记一次
+  const softNote = (): string[] => softMissing.length > 0
+    ? [...notes, '这一版把 ' + softMissing.length + ' 个代码里的名字写没了，其余一致，仍然采用']
+    : notes
   for (let round = 0; round < rounds; round++) {
     if (deps.now() >= deadline) {
       notes.push('时间到了，停止检查')
@@ -63,8 +75,9 @@ export async function improve(
       notes.push('没有发现问题')
       break
     }
+    if (asksNumber === undefined) asksNumber = critique.asksNumber
     problems.push(...critique.problems)
-    const rewritten = await deps.rewrite(current, critique)
+    const rewritten = await deps.rewrite(current, { ...critique, asksNumber })
     if (!rewritten) {
       notes.push('改写没有返回内容')
       break
@@ -82,14 +95,14 @@ export async function improve(
         problems,
         rejectedText: rewritten,
         softMissing,
-        notes,
+        droppedNumbers,
+        notes: softNote(),
       }
     }
-    const facts = preservesFacts(original, rewritten)
+    const facts = preservesFacts(original, rewritten, question, asksNumber)
     if (!facts.ok) {
-      notes.push(roundsRun === 0
-        ? '改写动了数字、路径这类要紧的东西，整段作废'
-        : '后一轮改的动了要紧的东西，作废，保留前一轮的结果')
+      const why = facts.invented.length > 0 ? '改写里出现了原文没有的数字' : '你问的就是数量，改写却删了数字'
+      notes.push(roundsRun === 0 ? why + '，整段作废' : why + '，后一轮作废，保留前一轮的结果')
       return {
         text: current,
         roundsRun,
@@ -97,15 +110,16 @@ export async function improve(
         rejected: { missing: facts.hard },
         rejectedText: rewritten,
         softMissing,
-        notes,
+        droppedNumbers,
+        notes: softNote(),
       }
     }
-    if (facts.soft.length > 0) {
-      softMissing.push(...facts.soft)
-      notes.push('这一版把 ' + facts.soft.length + ' 个代码里的名字写没了，其余一致，仍然采用')
-    }
+    // 两轮都拿原文比，同一个名字会报两次，只留最新一轮的结果
+    softMissing.splice(0, softMissing.length, ...facts.soft)
+    // 第二轮是在第一轮的基础上改，比较的对象始终是原文，所以同一个数字两轮都会报，去重
+    droppedNumbers.splice(0, droppedNumbers.length, ...facts.dropped)
     current = rewritten
     roundsRun = round + 1
   }
-  return { text: current, roundsRun, problems, softMissing, critiqueRaw, notes }
+  return { text: current, roundsRun, problems, softMissing, droppedNumbers, critiqueRaw, notes: softNote() }
 }

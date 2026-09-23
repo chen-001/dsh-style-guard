@@ -6,7 +6,7 @@
  *
  * 三件必须做的事（这个插件站在每次回复的必经之路上）：
  * 1. 只拦够长的回复，要调用工具的那几轮原样放过去；
- * 2. 改写的前后核对数字、路径、反引号里的名字，对不上就整段作废用原文；
+ * 2. 改写的前后核对数字，改错、多出，或者用户问数量时删了，就整段作废用原文；
  * 3. 自己任何一步失败或超时都放行原文，不能让用户的对话卡住。
  */
 import type { Context } from 'cordis'
@@ -195,6 +195,7 @@ async function* guarded(
             critique: text => critiqueReply(ctx, route, rubric, text, question, options.signal),
             rewrite: (text, critique) => rewriteReply(ctx, route, rubric, text, critique, question, config.rewriteEffort, options.signal),
           },
+          question,
         )
         const changed = result.roundsRun > 0 && result.text !== collected.text
         appendAudit(config.auditPath, {
@@ -209,6 +210,7 @@ async function* guarded(
           notes: result.notes,
           rejected: result.rejected,
           softMissing: result.softMissing,
+          droppedNumbers: result.droppedNumbers,
           critiqueRaw: result.critiqueRaw,
           dryRun: config.dryRun,
           applied: changed && !config.dryRun,

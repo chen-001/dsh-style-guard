@@ -32,16 +32,26 @@ export interface FactToken {
 }
 /** 把正文里的数量和名字都挑出来。 */
 export declare function readTokens(text: string): FactToken[];
+export declare function asksForNumbers(question: string): boolean;
 /** 事实核对的结果。 */
 export interface FactCheck {
-    /** 数量一个没丢才算通过。 */
+    /** 没有改错或多出来的数字，该留的数字也都在，才算通过。 */
     ok: boolean;
-    /** 丢掉的词，全部。 */
-    missing: string[];
-    /** 丢掉且挡下改写的数量。 */
+    /** 挡下改写的数字，包括改写里凭空多出来的，和不许删却被删掉的。 */
     hard: string[];
+    /** 改写里凭空多出来的数字，原文哪里都找不到。hard 的一部分。 */
+    invented: string[];
+    /** 删掉了但允许删的数字。只记账，面板上提一句。 */
+    dropped: string[];
     /** 丢掉但不挡路的代码名字，路径、文件名、反引号代号都算。 */
     soft: string[];
 }
-/** 改写前后的事实核对。只挡正文里的数量，代码名字丢了照常采用。 */
-export declare function preservesFacts(original: string, rewritten: string): FactCheck;
+/**
+ * 改写前后的事实核对。
+ *
+ * 删数字是允许的，常规检查里的字节数、测试条数压成"其余检查都通过"正是规范要的。
+ * 挡的是三种情况。改写里出现原文没有的数字，说明改错或者编了；
+ * 用户问的就是数量，这时删哪个都不行；用户问题里提到的数字，回答里也要留着。
+ * 判断"原文有没有"时把代码名字里的数字也算上，原文写 `199`、改写去掉反引号写 199，不算多出来。
+ */
+export declare function preservesFacts(original: string, rewritten: string, question?: string, asksNumber?: boolean): FactCheck;

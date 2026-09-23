@@ -11,6 +11,8 @@ export interface ReviewEntry {
     problems: string[];
     missing: string[];
     softMissing: string[];
+    /** 采纳的改写里删掉的数字。 */
+    droppedNumbers: string[];
     /** 检查那一步返回的内容读不出来时，它的开头。 */
     critiqueRaw: string;
     original: string;

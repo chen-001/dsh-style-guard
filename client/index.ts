@@ -26,6 +26,7 @@ interface Entry {
   problems: string[]
   missing: string[]
   softMissing: string[]
+  droppedNumbers: string[]
   critiqueRaw: string
   original: string
   rewritten: string
@@ -171,8 +172,8 @@ function detail(entry: Entry) {
     rows.push(h('div', {
       key: 'm',
       style: { marginBottom: '8px', color: '#b42318', fontSize: '13px', lineHeight: '1.7' },
-    }, '这一版把原文里的数字改掉或者弄丢了，因此没有采用：' + entry.missing.join('、')
-      + '。数字一般是你手上的结果和门槛，对不上就不能照它用。'))
+    }, '这一版的数字对不上，因此没有采用：' + entry.missing.join('、')
+      + '。要么是改写里多出了原文没有的数，要么是你问的就是数量它却删了。'))
   }
 
   // 采纳了但丢了代码名字的，单独提一句，不影响使用
@@ -182,6 +183,15 @@ function detail(entry: Entry) {
       style: { marginBottom: '8px', color: '#8a6d00', fontSize: '13px', lineHeight: '1.7' },
     }, '这一版已经采用，只是原文里的这些名字没保留：' + entry.softMissing.join('、')
       + '。路径、文件名和代码里的代号都算这一类，不影响你读，需要照着改文件时看原文那一栏。'))
+  }
+
+  // 采纳了但删了数字的，也提一句。你没问数量时，常规检查里的数字允许删
+  if (entry.droppedNumbers.length > 0) {
+    rows.push(h('div', {
+      key: 'dn',
+      style: { marginBottom: '8px', color: '#8a6d00', fontSize: '13px', lineHeight: '1.7' },
+    }, '这一版已经采用，删掉了原文里的这些数字：' + entry.droppedNumbers.join('、')
+      + '。想看具体数的话，看原文那一栏。'))
   }
 
   if (rejectedOnly) {

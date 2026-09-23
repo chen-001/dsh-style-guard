@@ -1,6 +1,8 @@
 export interface Critique {
     problems: string[];
     verdict: string;
+    /** 检查模型判断用户这一轮是不是在问一个数量。没给判断时是 undefined。 */
+    asksNumber?: boolean;
     /** 模型返回的东西读不成 JSON 时，这里放它的开头，用于排查。 */
     unreadable?: string;
 }
@@ -20,9 +22,11 @@ export interface ImproveResult {
     rejectedText?: string;
     /** 采纳了，但改写时没保住的代码名字。不挡路，只记账。 */
     softMissing: string[];
+    /** 采纳了，改写时删掉的数字。用户没问数量时允许删，只记账。 */
+    droppedNumbers: string[];
     /** 检查那一步返回的内容读不出来时，它的开头。 */
     critiqueRaw?: string;
     notes: string[];
 }
 /** 反复审改到没问题、到轮次上限、或到时间上限为止。 */
-export declare function improve(original: string, rounds: number, deadline: number, deps: ImproveDeps): Promise<ImproveResult>;
+export declare function improve(original: string, rounds: number, deadline: number, deps: ImproveDeps, question?: string): Promise<ImproveResult>;

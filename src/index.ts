@@ -43,6 +43,8 @@ export interface Config {
   sessions: string[]
   /** 只处理主 agent，跳过子 agent。 */
   onlyRootAgents: boolean
+  /** 只处理模型名字里带这段文字的请求，留空表示不按模型筛。 */
+  modelFilter: string
   /** 检查与改写用哪个服务商，留空表示跟主模型一致。 */
   provider: string
   /** 检查与改写用哪个模型，留空表示跟主模型一致。 */
@@ -65,6 +67,7 @@ export const Config = z.object({
   maxExtraMs: z.number().default(90000),
   sessions: z.array(z.string()).default([]),
   onlyRootAgents: z.boolean().default(true),
+  modelFilter: z.string().default('deepseek'),
   provider: z.string().default(''),
   model: z.string().default(''),
   verbose: z.boolean().default(false),
@@ -128,6 +131,12 @@ function looksLikeAgentCall(options: GenerateOptions): boolean {
 
 /** 判断这次调用是否归本插件管。返回空串表示管，返回原因表示跳过。 */
 function skipReason(ctx: Context, config: Config, options: GenerateOptions): string {
+  // 按模型名字筛。名字对不上的说明这一轮的回复不是目标模型写的，不用管。
+  if (config.modelFilter.length > 0) {
+    const wanted = config.modelFilter.toLowerCase()
+    const name = String(options.model ?? '').toLowerCase()
+    if (!name.includes(wanted)) return '模型名字里没有 ' + config.modelFilter
+  }
   if (config.sessions.length > 0) {
     const sessionId = options.sessionId === undefined ? '' : String(options.sessionId)
     if (!sessionId || !config.sessions.includes(sessionId)) return '不在指定的会话里'

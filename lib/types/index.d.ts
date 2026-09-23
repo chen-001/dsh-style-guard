@@ -30,6 +30,8 @@ export interface Config {
     sessions: string[];
     /** 只处理主 agent，跳过子 agent。 */
     onlyRootAgents: boolean;
+    /** 只处理模型名字里带这段文字的请求，留空表示不按模型筛。 */
+    modelFilter: string;
     /** 检查与改写用哪个服务商，留空表示跟主模型一致。 */
     provider: string;
     /** 检查与改写用哪个模型，留空表示跟主模型一致。 */
@@ -51,6 +53,7 @@ export declare const Config: z<Schemastery.ObjectS<{
     maxExtraMs: z<number, number>;
     sessions: z<string[], string[]>;
     onlyRootAgents: z<boolean, boolean>;
+    modelFilter: z<string, string>;
     provider: z<string, string>;
     model: z<string, string>;
     verbose: z<boolean, boolean>;
@@ -65,6 +68,7 @@ export declare const Config: z<Schemastery.ObjectS<{
     maxExtraMs: z<number, number>;
     sessions: z<string[], string[]>;
     onlyRootAgents: z<boolean, boolean>;
+    modelFilter: z<string, string>;
     provider: z<string, string>;
     model: z<string, string>;
     verbose: z<boolean, boolean>;

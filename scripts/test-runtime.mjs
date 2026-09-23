@@ -24,7 +24,8 @@ const fork = ctx.plugin(plugin, {})
 await new Promise(resolve => setImmediate(resolve))
 assert.equal(fork.state, 2, 'plugin must be active')
 const chunks = [{ type: 'text-delta', index: 0, text: 'OK' }, { type: 'finish', reason: { kind: 'stop' } }]
-const options = Object.freeze({ provider: 'test', model: 'test', messages: [] })
+// 模型名字里要带 deepseek，否则插件按设置跳过
+const options = Object.freeze({ provider: 'test', model: 'deepseek-v4.1-flash', messages: [] })
 const source = () => (async function* () { yield* chunks })()
 
 try {
@@ -38,7 +39,14 @@ try {
 
   const titleStream = source()
   assert.equal(ctx.waterfall('llm/stream', { ...options, purpose: 'title' }, () => titleStream), titleStream)
-  console.log('PASS: root reply, child bypass, auxiliary-call bypass under host injection checks')
+
+  // 名字不带 deepseek 的模型整条放过去，连 agents 都不用查
+  const beforeOthers = registryReads
+  const otherStream = source()
+  const otherOptions = Object.freeze({ provider: 'test', model: 'gpt-4o', messages: [] })
+  assert.equal(ctx.waterfall('llm/stream', otherOptions, () => otherStream), otherStream)
+  assert.equal(registryReads, beforeOthers, 'other models must not even reach the agent check')
+  console.log('PASS: root reply, child bypass, auxiliary-call bypass, other-model bypass under host injection checks')
 } finally {
   await fork.dispose()
   await services.dispose()

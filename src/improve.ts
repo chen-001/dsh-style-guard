@@ -7,6 +7,8 @@ import { preservesFacts } from './guard.js'
 export interface Critique {
   problems: string[]
   verdict: string
+  /** 模型返回的东西读不成 JSON 时，这里放它的开头，用于排查。 */
+  unreadable?: string
 }
 
 export interface ImproveDeps {
@@ -24,6 +26,8 @@ export interface ImproveResult {
   rejectedText?: string
   /** 采纳了，但改写时没保住的代码名字。不挡路，只记账。 */
   softMissing: string[]
+  /** 检查那一步返回的内容读不出来时，它的开头。 */
+  critiqueRaw?: string
   notes: string[]
 }
 
@@ -39,6 +43,7 @@ export async function improve(
   const problems: string[] = []
   const softMissing: string[] = []
   const notes: string[] = []
+  let critiqueRaw: string | undefined
   for (let round = 0; round < rounds; round++) {
     if (deps.now() >= deadline) {
       notes.push('时间到了，停止检查')
@@ -46,7 +51,12 @@ export async function improve(
     }
     const critique = await deps.critique(current)
     if (!critique) {
-      notes.push('审查没有返回结果')
+      notes.push('检查那一步没有返回内容')
+      break
+    }
+    if (critique.unreadable !== undefined) {
+      notes.push('检查那一步返回的内容读不出来，这一轮原文照发')
+      critiqueRaw = critique.unreadable
       break
     }
     if (critique.problems.length === 0) {
@@ -85,5 +95,5 @@ export async function improve(
     current = rewritten
     roundsRun = round + 1
   }
-  return { text: current, roundsRun, problems, softMissing, notes }
+  return { text: current, roundsRun, problems, softMissing, critiqueRaw, notes }
 }

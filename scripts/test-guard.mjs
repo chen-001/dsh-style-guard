@@ -6,6 +6,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { collect, preservesFacts, replaceText } from '../lib/guard.js'
 import { improve } from '../lib/improve.js'
 import { riskySentences, splitSentences } from '../lib/textdiff.js'
+import { parseCritiqueJson } from '../lib/critic.js'
 
 let failed = 0
 function check(name, ok, detail) {
@@ -117,7 +118,13 @@ const numberChanged = await improve(SOFT_SOURCE, 1, Date.now() + 60000, {
 })
 check('数字被改动就作废', numberChanged.roundsRun === 0 && numberChanged.rejected?.missing.includes('5089') === true)
 
-// 6. 逐句比对：用来标出改写版里要和原文核对的句子
+// 6. 检查那一步的返回解析：模型常在 JSON 前后带一句说明，不能因此丢掉整段审查
+check('整段就是 JSON 时读得出来', parseCritiqueJson('{"problems":["a"],"verdict":"b"}')?.verdict === 'b')
+check('套着代码围栏也读得出来', parseCritiqueJson('\u0060\u0060\u0060json\n{"problems":[],"verdict":"ok"}\n\u0060\u0060\u0060')?.verdict === 'ok')
+check('前后带说明也读得出来', parseCritiqueJson('好的，结果如下：\n{"problems":["x"],"verdict":"y"}\n希望有帮助。')?.verdict === 'y')
+check('确实不是 JSON 时返回空', parseCritiqueJson('我读了一遍，感觉还行。') === undefined)
+
+// 7. 逐句比对：用来标出改写版里要和原文核对的句子
 const BASE = '第一句给结论。第二句讲原因。第三句给出 5089 这个数。'
 check('断句按句号切开', splitSentences(BASE).length === 3)
 check('原样不动时一句都不标', riskySentences(BASE, BASE).length === 0)

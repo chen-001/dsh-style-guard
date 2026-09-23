@@ -98,8 +98,7 @@ function stripFence(body: string): string {
   return lines.join('\n').trim()
 }
 
-function parseJson(raw: string): Record<string, unknown> | undefined {
-  const body = stripFence(raw)
+function asObject(body: string): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(body)
     return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
@@ -108,6 +107,21 @@ function parseJson(raw: string): Record<string, unknown> | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * 从模型返回里挖出那个 JSON。
+ * 先当整段就是 JSON；不是的话，退一步取第一个大括号到最后一个大括号之间的部分，
+ * 模型常在 JSON 前后带一句说明，卡在整段解析上会把好好的审查结果丢掉。
+ */
+export function parseCritiqueJson(raw: string): Record<string, unknown> | undefined {
+  const body = stripFence(raw)
+  const whole = asObject(body)
+  if (whole) return whole
+  const start = body.indexOf('{')
+  const end = body.lastIndexOf('}')
+  if (start < 0 || end <= start) return undefined
+  return asObject(body.slice(start, end + 1))
 }
 
 /** 审一遍。返回 undefined 表示这次审查没能得到可用结果。 */
@@ -121,13 +135,14 @@ export async function critiqueReply(
   const raw = await callText(ctx, {
     route,
     system: CRITIC_SYSTEM,
-    maxTokens: 2000,
+    maxTokens: 3000,
     signal,
     prompt: '规范如下。\n\n' + rubric + '\n\n=== 待审回复 ===\n' + text + '\n\n只输出 JSON。',
   })
   if (!raw) return undefined
-  const parsed = parseJson(raw)
-  if (!parsed) return undefined
+  const parsed = parseCritiqueJson(raw)
+  // 读不出来时把开头带回去留档，下一次遇到就不用猜它到底返回了什么
+  if (!parsed) return { problems: [], verdict: '', unreadable: raw.slice(0, 400) }
   const problems = Array.isArray(parsed.problems)
     ? parsed.problems.filter((item): item is string => typeof item === 'string').slice(0, 6)
     : []

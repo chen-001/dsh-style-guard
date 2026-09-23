@@ -26,6 +26,7 @@ interface Entry {
   problems: string[]
   missing: string[]
   softMissing: string[]
+  critiqueRaw: string
   original: string
   rewritten: string
   rejectedText: string
@@ -146,6 +147,17 @@ function detail(entry: Entry) {
   const rejectedOnly = entry.rewritten.length === 0 && entry.rejectedText.length > 0
   const shown = entry.rewritten.length > 0 ? entry.rewritten : entry.rejectedText
 
+  // 检查那一步返回的东西读不出来时，把它开头原样放出来，方便排查
+  if (entry.critiqueRaw) {
+    rows.push(h('div', {
+      key: 'raw',
+      style: { marginBottom: '8px', padding: '8px 10px', borderRadius: '6px', background: '#f5f6f8', fontSize: '12px', lineHeight: '1.6' },
+    }, [
+      h('div', { key: 't', style: { ...MUTED, marginBottom: '4px' } }, '检查那一步返回的内容读不出来，它的开头是'),
+      h('pre', { key: 'b', style: { margin: '0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '160px', overflow: 'auto' } }, entry.critiqueRaw),
+    ]))
+  }
+
   // 改写没产出时，把原因说清楚，别让人以为是没检查
   if (!shown && entry.problems.length > 0) {
     rows.push(h('div', {
@@ -221,22 +233,42 @@ function Panel(props: { sessionId?: string }) {
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
     const url = sessionId ? API + '&session=' + encodeURIComponent(sessionId) : API
-    fetch(url)
-      .then(response => response.json())
-      .then((data: { records?: Entry[] }) => {
-        if (!alive) return
-        setRecords(Array.isArray(data.records) ? data.records : [])
-        setError('')
-        setLoading(false)
-      })
-      .catch((cause: unknown) => {
-        if (!alive) return
-        setError(String(cause))
-        setLoading(false)
-      })
-    return () => { alive = false }
+
+    // 后台自己刷。第一次和手动点刷新时显示"读取中"，自动刷不闪这一段。
+    const load = (showSpinner: boolean) => {
+      if (showSpinner) setLoading(true)
+      fetch(url)
+        .then(response => response.json())
+        .then((data: { records?: Entry[] }) => {
+          if (!alive) return
+          setRecords(Array.isArray(data.records) ? data.records : [])
+          setError('')
+          setLoading(false)
+        })
+        .catch((cause: unknown) => {
+          if (!alive) return
+          setError(String(cause))
+          setLoading(false)
+        })
+    }
+
+    load(true)
+    // 每 5 秒取一次，页面不在前台时跳过，省得后台白跑
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load(false)
+    }, 5000)
+    // 切回这个页面时立刻取一次，不用等下一个 5 秒
+    const onWake = () => { if (document.visibilityState === 'visible') load(false) }
+    window.addEventListener('focus', onWake)
+    document.addEventListener('visibilitychange', onWake)
+
+    return () => {
+      alive = false
+      clearInterval(timer)
+      window.removeEventListener('focus', onWake)
+      document.removeEventListener('visibilitychange', onWake)
+    }
   }, [tick, sessionId])
 
   const adopted = records.filter(entry => entry.applied).length
@@ -252,7 +284,7 @@ function Panel(props: { sessionId?: string }) {
       }, '刷新'),
     ]),
     h('div', { key: 'stat', style: { ...MUTED, marginBottom: '10px' } },
-      (sessionId ? '本会话 ' : '未取到会话编号，显示全部会话的 ') + records.length + ' 次，采纳 ' + adopted + '，驳回 ' + rejected),
+      (sessionId ? '本会话 ' : '未取到会话编号，显示全部会话的 ') + records.length + ' 次，采纳 ' + adopted + '，驳回 ' + rejected + '，每 5 秒自动刷新'),
     error ? h('div', { key: 'err', style: { color: '#b42318' } }, '读取失败 ' + error) : null,
     loading ? h('div', { key: 'load', style: MUTED }, '读取中…') : null,
     records.length === 0 && !loading ? h('div', { key: 'empty', style: MUTED }, '还没有记录。') : null,

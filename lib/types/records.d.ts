@@ -11,6 +11,8 @@ export interface ReviewEntry {
     problems: string[];
     missing: string[];
     softMissing: string[];
+    /** 检查那一步返回的内容读不出来时，它的开头。 */
+    critiqueRaw: string;
     original: string;
     rewritten: string;
     /** 被事实核对驳回的那一版改写。旧记录没有这个字段。 */

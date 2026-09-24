@@ -23,6 +23,14 @@ the problems accurately. This plugin makes that second pass part of every reply.
 
 Any failure or timeout inside the plugin passes the original through.
 
+## The original-versus-rewrite toggle
+
+Every rewritten reply gets an extra "原版" (original) button in its action row, next to
+copy and branch. One click swaps that reply to the model's original text and the button
+becomes "改写版"; clicking again switches back. Only replies that were actually rewritten
+and are still among the latest 200 records have the button — dry-run replies and older
+ones do not. The choice is per page: a refresh returns to the rewritten text.
+
 ## Install
 
 ```sh

@@ -3,11 +3,13 @@
 DSH 回复风格检查插件。拦在模型的输出流中间，先检查、改写，再把结果交给上层。
 
 - **形态**：host + client 两半，bundle 插件，`cordis.patch.yml` 只有一行 insert。
-  host 拦输出流并留档；client 在右侧栏挂一个标签页展示记录。
+  host 拦输出流并留档；client 在右侧栏挂一个标签页展示记录，也在每条回复的操作行里放一个「原版 / 改写版」开关。
 - **入口**：`src/index.ts` 监听 `llm/stream` 瀑布。判断某次调用是不是主对话写回复，见 `looksLikeAgentCall`。
 - **模块**：`guard.ts` 分片收集与替换、事实核对；`improve.ts` 审改轮次；`critic.ts` 两次模型调用与提示词；`voice.ts` 编辑手册（整段口吻的例子）与取用户问题；`rubric.ts` 现读规范；`audit.ts` 留档。
 - **构建**：`bash scripts/build.sh`（host，走 DSH_CHECKOUT 里的 tsc）加 `bash scripts/build-client.sh`（client，走同一个 checkout 里的 tsdown）。`npm run build:all` 两半一起。
+- **客户端**：`client/index.ts` 右侧栏面板；`client/original-toggle.ts` 操作行开关，注册进 `conversation.chat.assistant-actions`；`client/dom.ts` 找这一轮收尾的正文行、放置并切换原版，纯 DOM 无 React，好单独测。
 - **自测**：`node scripts/test-guard.mjs`，纯逻辑，不调用模型。
+- **开关自测**：`bash scripts/test-client.sh`，在 jsdom 里搭出聊天页的行结构，验证找行、切换与还原；不连浏览器。
 - **注入检查回归**：`node scripts/test-runtime.mjs <宿主 cordis 的 lib/index.js>`，用真实 Context 验证插件能挂载、主回复被拦、子 agent 与附带调用被放行。改动 inject 或判断逻辑之后必须跑一次。
 - **配置**：profile patch 的 `config`，可被 `~/.dsh/style-guard/config.json` 覆盖；改完重载插件即生效。
 - **面板数据**：host 侧 `registerRecordsApi` 用延迟注入挂一个只读接口 `/dsh-style-guard/api/records`，client 侧只读它，不碰文件。

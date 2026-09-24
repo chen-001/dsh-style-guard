@@ -8,6 +8,7 @@
  */
 import { createElement as h, useEffect, useState } from 'react'
 import { riskySentences, splitSentences } from '../src/textdiff.js'
+import { StyleGuardAction } from './original-toggle.js'
 
 export const inject = ['slots']
 
@@ -339,5 +340,16 @@ export function apply(ctx: ClientContext): void {
     })
   } catch {
     /* 右侧栏不可用时整个面板缺席，本体照常工作 */
+  }
+
+  // 每条回复的操作行里加一个「原版 / 改写版」开关。
+  // 老版本聊天页没有这个位置时整段跳过，右侧栏面板照常。
+  try {
+    ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register(
+      { name: 'conversation.chat.assistant-actions', id: 'style-guard-original', order: 10 },
+      StyleGuardAction as unknown as (props: Record<string, unknown>) => unknown,
+    ))
+  } catch {
+    /* 操作行不可用时开关缺席，本体照常工作 */
   }
 }

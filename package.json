@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-style-guard",
-  "version": "0.2.11",
+  "version": "0.3.0",
   "description": "回复送出前的语言风格检查与改写：拦在模型输出流中间，先检查、再改写，然后把结果交给页面和会话记录。",
   "private": true,
   "type": "module",
@@ -27,7 +27,8 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-slots"
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-primitives"
       ],
       "platform": "web"
     }
@@ -47,6 +48,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node scripts/test-guard.mjs",
     "test:runtime": "node scripts/test-runtime.mjs",
+    "test:client": "bash scripts/test-client.sh",
     "build:client": "bash scripts/build-client.sh",
     "build:all": "bash scripts/build.sh && bash scripts/build-client.sh"
   },

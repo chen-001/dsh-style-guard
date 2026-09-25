@@ -1,8 +1,9 @@
 /**
- * 每条回复操作行里的「原版 / 改写版」开关。
+ * 每条回复操作行里的「另一版」开关：原版看改写版，改写版看原版。
  *
- * 页面上那条回复显示的是改写后的版本，原版只存在插件的记录里。
- * 这里按正文内容去记录里对上号，点一下把这条回复换成原版，再点切回来。
+ * 页面上显示哪一版由插件决定（采纳了就显示改写版，没采纳就显示原文），
+ * 这里按正文内容去记录里对上号，点一下换成另一版，再点切回来。
+ * 没采纳的回复默认就是原文，按钮只是让人能看看被驳回的改写版长什么样。
  *
  * 为什么直接改页面：聊天页只给每条回复留了「操作行」这一个位置，
  * 没有让插件替换正文的入口，所以正文的切换由按钮自己在页面上完成。
@@ -13,9 +14,9 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  applyOriginal, closingAssistantItem, ensureStyle, flowItemOf, matchRecord, placeOriginal, removeOriginal,
+  applyAlternate, closingAssistantItem, ensureStyle, flowItemOf, matchVersion, placeAlternate, removeAlternate,
 } from './dom.js'
-import type { GuardRecord } from './dom.js'
+import type { GuardRecord, VersionMatch } from './dom.js'
 
 /** 聊天树里一条回复，只取匹配要用的部分。 */
 interface ChatNodeLike {
@@ -50,15 +51,23 @@ function loadRecords(sessionId: string): Promise<GuardRecord[]> {
   return promise
 }
 
-/** 原版正文，用聊天页自己的 markdown 渲染，读起来和正常回复一样。 */
-function OriginalBlock({ text }: { text: string }): ReactNode {
+/** 另一版正文，用聊天页自己的 markdown 渲染，读起来和正常回复一样。 */
+function AlternateBlock({ text, header }: { text: string, header: string }): ReactNode {
   return h('div', { style: { padding: '2px 0 8px' } }, [
     h('div', {
       key: 'label',
       style: { fontSize: '12px', color: '#8a6d00', marginBottom: '6px' },
-    }, '模型原来写的版本'),
+    }, header),
     h(MarkdownText, { key: 'body', text, labels: LABELS }),
   ])
+}
+
+/** 另一版是什么，按用途起个名字。 */
+function headerOf(match: VersionMatch): string {
+  if (match.alternateIsOriginal) return '模型原来写的版本'
+  if (match.alternateRejected) return '模型改写的版本（没有采用，页面上用的是原文）'
+  if (match.alternateDryRun) return '模型改写的版本（只检查，没有替换）'
+  return '模型改写的版本'
 }
 
 /** 内层组件，读取聊天记录的钩子在这里无条件调用。 */
@@ -80,55 +89,63 @@ function Toggle({ messageId, sessionId, useChat }: {
     }
     return ''
   })
-  const [record, setRecord] = useState<GuardRecord | null>(null)
-  const [showOriginal, setShowOriginal] = useState(false)
+  const [match, setMatch] = useState<VersionMatch | null>(null)
+  const [showAlternate, setShowAlternate] = useState(false)
   const [holder, setHolder] = useState<HTMLElement | null>(null)
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const flowRef = useRef<HTMLElement | null>(null)
 
-  // 正文和记录里的改写版一字不差，说明这条回复被改写器动过，才给开关。
+  // 正文和记录里的某一版一字不差，说明这条回复被改写器动过，才给开关。
   useEffect(() => {
     if (text.length === 0) return
     let alive = true
     void loadRecords(sessionId).then((records) => {
       if (!alive) return
-      const hit = matchRecord(records, text)
-      if (hit !== undefined) setRecord(hit)
+      const hit = matchVersion(records, text)
+      if (hit !== undefined) setMatch(hit)
     })
     return () => { alive = false }
   }, [text, sessionId])
 
-  // 在正文那一行里先占一个位置，用来放原版。
+  // 在正文那一行里先占一个位置，用来放另一版。
   useEffect(() => {
-    if (record === null || rootRef.current === null) return
+    if (match === null || rootRef.current === null) return
     ensureStyle()
     const tail = flowItemOf(rootRef.current)
     if (tail === null) return
     const flow = closingAssistantItem(tail)
     if (flow === null) return
-    const node = placeOriginal(flow)
+    const node = placeAlternate(flow)
     flowRef.current = flow
     setHolder(node)
     return () => {
-      removeOriginal(flow, node)
+      removeAlternate(flow, node)
       flowRef.current = null
     }
-  }, [record])
+  }, [match])
 
-  // 开关一动，就把这一行在「改写版」和「原版」之间换过来。
+  // 开关一动，就把这一行在页面现在显示的那版和另一版之间换过来。
   useEffect(() => {
     const flow = flowRef.current
     if (flow === null || holder === null) return
-    applyOriginal(flow, holder, showOriginal)
-  }, [showOriginal, holder])
+    applyAlternate(flow, holder, showAlternate)
+  }, [showAlternate, holder])
 
-  if (record === null) return null
+  if (match === null) return null
+  // 按钮上写的是点一下会看到哪一版；切过去之后写的是怎么切回来。
+  const alternateName = match.alternateIsOriginal ? '原版' : '改写版'
+  const pageName = match.alternateIsOriginal ? '改写版' : '原版'
+  const title = showAlternate
+    ? (match.alternateIsOriginal ? '切回改写后的版本' : '切回页面原来显示的那版')
+    : (match.alternateIsOriginal
+      ? '看模型原来写的版本'
+      : (match.alternateRejected ? '这一版没有采用，点一下看它长什么样' : '点一下看改写后的版本'))
   return h('span', { ref: rootRef, style: { display: 'inline-flex', alignItems: 'center' } }, [
     h('button', {
       key: 'button',
       type: 'button',
-      onClick: () => setShowOriginal(value => !value),
-      title: showOriginal ? '切回改写后的版本' : '看模型原来写的版本',
+      onClick: () => setShowAlternate(value => !value),
+      title,
       style: {
         cursor: 'pointer',
         padding: '1px 8px',
@@ -136,16 +153,16 @@ function Toggle({ messageId, sessionId, useChat }: {
         fontSize: '12px',
         lineHeight: '18px',
         marginLeft: '8px',
-        border: '1px solid ' + (showOriginal ? '#d9a400' : '#d0d5dd'),
-        background: showOriginal ? '#fff8e1' : '#fff',
-        color: showOriginal ? '#8a6d00' : '#5b6169',
+        border: '1px solid ' + (showAlternate ? '#d9a400' : '#d0d5dd'),
+        background: showAlternate ? '#fff8e1' : '#fff',
+        color: showAlternate ? '#8a6d00' : '#5b6169',
       },
-    }, showOriginal ? '改写版' : '原版'),
-    holder === null ? null : createPortal(h(OriginalBlock, { text: record.original }), holder),
+    }, showAlternate ? pageName : alternateName),
+    holder === null ? null : createPortal(h(AlternateBlock, { text: match.alternate, header: headerOf(match) }), holder),
   ])
 }
 
-/** 操作行里的一项：给被改写过的回复加一个原版/改写版开关。 */
+/** 操作行里的一项：给被改写器动过的回复加一个看另一版的开关。 */
 export function StyleGuardAction(props: ToggleProps): ReactNode {
   const { messageId, sessionId = '', useChat } = props
   if (typeof messageId !== 'string' || typeof useChat !== 'function') return null

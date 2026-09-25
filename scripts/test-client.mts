@@ -1,6 +1,7 @@
 /**
  * 客户端开关的离线自测：在 jsdom 里搭出聊天页的行结构，
- * 验证「找到收尾正文行」「放进原版」「换过去再换回来」「记录匹配」这几步。
+ * 验证「找到收尾正文行」「放进另一版」「换过去再换回来」，
+ * 以及「采纳的回复换原版」「没采纳的回复换改写版」这两类匹配。
  * 不调用模型、不连浏览器。运行：npm run test:client
  */
 import { createRequire } from 'node:module'
@@ -8,7 +9,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
-  applyOriginal, closingAssistantItem, ensureStyle, flowItemOf, matchRecord, placeOriginal, removeOriginal,
+  applyAlternate, closingAssistantItem, ensureStyle, flowItemOf, matchVersion, placeAlternate, removeAlternate,
 } from '../client/dom.ts'
 
 const require = createRequire(import.meta.url)
@@ -64,32 +65,48 @@ check('下一轮只匹配自己那一行', later !== null && later.getAttribute(
 
 ensureStyle()
 ensureStyle()
-check('样式只注入一次', document.querySelectorAll('#' + 'dsh-style-guard-original-style').length === 1)
-check('样式含隐藏规则', (document.getElementById('dsh-style-guard-original-style')?.textContent ?? '')
+check('样式只注入一次', document.querySelectorAll('#dsh-style-guard-swap-style').length === 1)
+check('样式含隐藏规则', (document.getElementById('dsh-style-guard-swap-style')?.textContent ?? '')
   .includes('display:none !important'))
 
-const holder = placeOriginal(response as HTMLElement)
-check('原版位置放在正文行最前面', (response as HTMLElement).firstElementChild === holder)
-check('原版位置默认藏着', holder.style.display === 'none')
+const holder = placeAlternate(response as HTMLElement)
+check('另一版放在正文行最前面', (response as HTMLElement).firstElementChild === holder)
+check('另一版默认藏着', holder.style.display === 'none')
 
-applyOriginal(response as HTMLElement, holder, true)
-check('切到原版：行上打了记号', (response as HTMLElement).getAttribute('data-style-guard-original') === '1')
-check('切到原版：原版位置露出来', holder.style.display === '')
+applyAlternate(response as HTMLElement, holder, true)
+check('切过去：行上打了记号', (response as HTMLElement).getAttribute('data-style-guard-swap') === '1')
+check('切过去：另一版露出来', holder.style.display === '')
 
-applyOriginal(response as HTMLElement, holder, false)
-check('切回改写版：记号抹掉', (response as HTMLElement).getAttribute('data-style-guard-original') === null)
-check('切回改写版：原版位置藏回去', holder.style.display === 'none')
+applyAlternate(response as HTMLElement, holder, false)
+check('切回来：记号抹掉', (response as HTMLElement).getAttribute('data-style-guard-swap') === null)
+check('切回来：另一版藏回去', holder.style.display === 'none')
 
-removeOriginal(response as HTMLElement, holder)
+removeAlternate(response as HTMLElement, holder)
 check('收摊：位置撤走', holder.parentElement === null)
-check('收摊：记号不留', (response as HTMLElement).getAttribute('data-style-guard-original') === null)
+check('收摊：记号不留', (response as HTMLElement).getAttribute('data-style-guard-swap') === null)
 check('收摊：正文原样还在', (response as HTMLElement).querySelector('.md')?.textContent === '改写后的正文')
 
-const record = { original: '原来写的', rewritten: '改写后的正文' }
-check('正文对得上就取到记录', matchRecord([record], '改写后的正文') === record)
-check('对不上就不给', matchRecord([record], '别的一段话') === undefined)
-check('空正文不匹配', matchRecord([record], '') === undefined)
-check('没有改写版的记录不算', matchRecord([{ original: 'x', rewritten: '' }], 'x') === undefined)
+// 采纳的回复：页面显示改写版，能换的是原版
+const adopted = matchVersion([{ original: '原来写的', rewritten: '改写后的正文' }], '改写后的正文')
+check('采纳的回复：换到原版', adopted !== undefined && adopted.alternate === '原来写的'
+  && adopted.alternateIsOriginal === true)
+check('采纳的回复：不匹配别的正文', matchVersion([{ original: '原来写的', rewritten: '改写后的正文' }], '别的一段话') === undefined)
+
+// 没采纳的回复：页面显示原文，能换的是被驳回的改写版
+const rejected = matchVersion(
+  [{ original: '原文', rewritten: '', rejectedText: '被驳回的改写', dryRun: false }], '原文')
+check('没采纳的回复：换到被驳回的改写版', rejected !== undefined && rejected.alternate === '被驳回的改写'
+  && rejected.alternateIsOriginal === false && rejected.alternateRejected === true)
+
+// 只检查没替换的回复：页面显示原文，能换的是改写版
+const dry = matchVersion([{ original: '原文', rewritten: '改写的版本', dryRun: true }], '原文')
+check('只检查没替换：换到改写版', dry !== undefined && dry.alternate === '改写的版本'
+  && dry.alternateDryRun === true && dry.alternateRejected === false)
+
+// 本来就没改的回复：两版都没有，不给按钮
+check('本来就没改：不给按钮', matchVersion([{ original: '原文', rewritten: '' }], '原文') === undefined)
+check('空正文不匹配', matchVersion([{ original: '原文', rewritten: '改写的版本' }], '') === undefined)
+check('两版一样也不给按钮', matchVersion([{ original: '一样', rewritten: '一样' }], '一样') === undefined)
 
 console.log(failed === 0 ? '全部通过' : failed + ' 项失败')
 process.exit(failed === 0 ? 0 : 1)

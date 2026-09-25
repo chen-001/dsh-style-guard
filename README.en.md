@@ -25,11 +25,14 @@ Any failure or timeout inside the plugin passes the original through.
 
 ## The original-versus-rewrite toggle
 
-Every rewritten reply gets an extra "原版" (original) button in its action row, next to
-copy and branch. One click swaps that reply to the model's original text and the button
-becomes "改写版"; clicking again switches back. Only replies that were actually rewritten
-and are still among the latest 200 records have the button — dry-run replies and older
-ones do not. The choice is per page: a refresh returns to the rewritten text.
+Every reply the rewriter touched gets an extra button in its action row, next to copy and
+branch. For an adopted rewrite the page shows the rewritten text and the button reads
+"原版" (original); one click swaps in the model's draft. For a rewrite that was not
+adopted the page shows the draft and the button reads "改写版" (rewritten); one click
+shows the rejected version, with a note above it that it was not used. Both versions
+render as ordinary chat markdown, and clicking again switches back. Only replies the
+rewriter touched and that are still among the latest 200 records have the button; older
+ones do not. The choice is per page: a refresh returns to the default version.
 
 ## Install
 

@@ -1,8 +1,11 @@
 /**
  * @dsh-external/dsh-style-guard
  *
- * 拦在模型的输出流中间。整段话先落进这里，检查并改写之后才交给上层，
+ * 拦在模型的输出流中间。回复正文先落进这里，检查并改写之后才交给上层，
  * 所以页面上显示的和写进对话记录的都是改写后的版本，不会先出现一版难读的。
+ *
+ * 思考不参与检查和改写，所以它边生成边放过去，用户能立刻看到它在想什么。
+ * 正文仍然整段落在这里，等检查与改写做完再一次性交出去。
  *
  * 三件必须做的事（这个插件站在每次回复的必经之路上）：
  * 1. 只拦够长的回复，要调用工具的那几轮原样放过去；
@@ -162,6 +165,19 @@ function skipReason(ctx: Context, config: Config, options: GenerateOptions): str
   return ''
 }
 
+/**
+ * 这个分片是不是思考。
+ *
+ * 检查和改写都只碰正文：collect 只认 text 块，replaceText 也只换 text 块，
+ * 思考从头到尾原样穿过。所以它没有理由陪正文一起等，可以边生成边交给页面。
+ */
+function isReasoningChunk(chunk: StreamChunk): boolean {
+  if (chunk.type === 'reasoning-delta') return true
+  if (chunk.type === 'block-start') return chunk.blockType === 'reasoning'
+  if (chunk.type === 'block-end') return chunk.block.type === 'reasoning'
+  return false
+}
+
 async function* guarded(
   ctx: Context,
   config: Config,
@@ -170,7 +186,15 @@ async function* guarded(
 ): AsyncIterable<StreamChunk> {
   const started = Date.now()
   const chunks: StreamChunk[] = []
-  for await (const chunk of source) chunks.push(chunk)
+  for await (const chunk of source) {
+    // 思考分片立刻放行。手里一攒下别的分片就不再插队，这样不管模型怎么交错，
+    // 页面收到的块顺序都和它吐出来的顺序一致。
+    if (chunks.length === 0 && isReasoningChunk(chunk)) {
+      yield chunk
+      continue
+    }
+    chunks.push(chunk)
+  }
 
   let out = chunks
   try {
